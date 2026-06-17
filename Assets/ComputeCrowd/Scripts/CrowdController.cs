@@ -7,6 +7,7 @@ using UnityEngine.Rendering;
 public class CrowdController : MonoBehaviour
 {
     private const int MaxInstancesPerBatch = 1023;
+    private const int WebGLMaxInstancesPerBatch = 64;
     private const float DefaultSampleRate = 30f;
 
     private static readonly int BaseMapId = Shader.PropertyToID("_BaseMap");
@@ -133,13 +134,6 @@ public class CrowdController : MonoBehaviour
     [SerializeField] private bool drawChunkGizmos = true;
 
     private readonly Plane[] frustumPlanes = new Plane[6];
-    private readonly Matrix4x4[] matrixBatch = new Matrix4x4[MaxInstancesPerBatch];
-    private readonly Vector4[] colorRBatch = new Vector4[MaxInstancesPerBatch];
-    private readonly Vector4[] colorGBatch = new Vector4[MaxInstancesPerBatch];
-    private readonly Vector4[] colorBBatch = new Vector4[MaxInstancesPerBatch];
-    private readonly Vector4[] colorABatch = new Vector4[MaxInstancesPerBatch];
-    private readonly Vector4[] animDataBatch = new Vector4[MaxInstancesPerBatch];
-
     private readonly List<Chunk> chunks = new();
     private MaterialPropertyBlock materialPropertyBlock;
     private Material runtimeMaterial;
@@ -164,6 +158,13 @@ public class CrowdController : MonoBehaviour
     private int lastVisibleInstanceCount;
     private int lastVisibleChunkCount;
     private long lastTriangleCount;
+    private int maxInstancesPerBatch;
+    private Matrix4x4[] matrixBatch;
+    private Vector4[] colorRBatch;
+    private Vector4[] colorGBatch;
+    private Vector4[] colorBBatch;
+    private Vector4[] colorABatch;
+    private Vector4[] animDataBatch;
 
     public int LastDrawCallCount => lastDrawCallCount;
     public int LastSetPassCount => lastSetPassCount;
@@ -283,6 +284,7 @@ public class CrowdController : MonoBehaviour
 
         billboardMaterials = BuildBillboardMaterials();
 
+        AllocateBatchBuffers();
         materialPropertyBlock = new MaterialPropertyBlock();
         BuildInstances();
 
@@ -754,7 +756,7 @@ public class CrowdController : MonoBehaviour
             frameVisibleInstanceCount++;
             countInBatch++;
 
-            if (countInBatch == MaxInstancesPerBatch)
+            if (countInBatch == maxInstancesPerBatch)
             {
                 FlushBatch(drawMesh, runtimeMaterial, countInBatch);
                 countInBatch = 0;
@@ -799,7 +801,7 @@ public class CrowdController : MonoBehaviour
                 frameVisibleInstanceCount++;
                 countInBatch++;
 
-                if (countInBatch == MaxInstancesPerBatch)
+                if (countInBatch == maxInstancesPerBatch)
                 {
                     FlushBatch(drawMesh, variantMaterial, countInBatch);
                     countInBatch = 0;
@@ -1006,7 +1008,7 @@ public class CrowdController : MonoBehaviour
 
     private void FlushBatch(Mesh drawMesh, Material material, int count)
     {
-        if (drawMesh == null || material == null || count <= 0)
+        if (drawMesh == null || material == null || count <= 0 || matrixBatch == null)
         {
             return;
         }
@@ -1016,11 +1018,11 @@ public class CrowdController : MonoBehaviour
         frameTriangleCount += GetTriangleCount(drawMesh) * (long)count;
 
         materialPropertyBlock.Clear();
-        materialPropertyBlock.SetVectorArray(ColorRId, colorRBatch);
-        materialPropertyBlock.SetVectorArray(ColorGId, colorGBatch);
-        materialPropertyBlock.SetVectorArray(ColorBId, colorBBatch);
-        materialPropertyBlock.SetVectorArray(ColorAId, colorABatch);
-        materialPropertyBlock.SetVectorArray(AnimDataId, animDataBatch);
+        SetExactVectorArray(ColorRId, colorRBatch, count);
+        SetExactVectorArray(ColorGId, colorGBatch, count);
+        SetExactVectorArray(ColorBId, colorBBatch, count);
+        SetExactVectorArray(ColorAId, colorABatch, count);
+        SetExactVectorArray(AnimDataId, animDataBatch, count);
 
         Graphics.DrawMeshInstanced(
             drawMesh,
@@ -1042,6 +1044,37 @@ public class CrowdController : MonoBehaviour
         }
 
         return (int)(mesh.GetIndexCount(0) / 3);
+    }
+
+    private void AllocateBatchBuffers()
+    {
+        maxInstancesPerBatch = Application.platform == RuntimePlatform.WebGLPlayer
+            ? WebGLMaxInstancesPerBatch
+            : MaxInstancesPerBatch;
+        matrixBatch = new Matrix4x4[maxInstancesPerBatch];
+        colorRBatch = new Vector4[maxInstancesPerBatch];
+        colorGBatch = new Vector4[maxInstancesPerBatch];
+        colorBBatch = new Vector4[maxInstancesPerBatch];
+        colorABatch = new Vector4[maxInstancesPerBatch];
+        animDataBatch = new Vector4[maxInstancesPerBatch];
+    }
+
+    private void SetExactVectorArray(int propertyId, Vector4[] source, int count)
+    {
+        if (source == null || count <= 0)
+        {
+            return;
+        }
+
+        if (count == source.Length)
+        {
+            materialPropertyBlock.SetVectorArray(propertyId, source);
+            return;
+        }
+
+        Vector4[] exactValues = new Vector4[count];
+        Array.Copy(source, exactValues, count);
+        materialPropertyBlock.SetVectorArray(propertyId, exactValues);
     }
 
     private void ReleaseRuntimeResources()
