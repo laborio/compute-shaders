@@ -6,6 +6,10 @@
 [Ll]ogs/
 [Uu]ser[Ss]ettings/
 
+# Keep the published GitHub Pages WebGL output tracked.
+!docs/Build/
+!docs/Build/**
+
 # Memory captures
 MemoryCaptures/
 mono_crash.*.json
