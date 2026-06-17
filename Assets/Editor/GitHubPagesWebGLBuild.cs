@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
+using UnityEngine;
 
 public static class GitHubPagesWebGLBuild
 {
