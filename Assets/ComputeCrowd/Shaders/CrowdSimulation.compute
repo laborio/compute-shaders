@@ -1,0 +1,29 @@
+// This tells Unity that the compute shader entry point is named CSMain.
+#pragma kernel CSMain
+
+// This is the GPU buffer that stores one float3 position per agent.
+RWStructuredBuffer<float3> _Positions;
+
+// This is the total number of valid agents in the buffer.
+int _AgentCount;
+
+// This says one thread group contains 64 threads on X.
+[numthreads(64, 1, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+    // If this thread index is past the real agent count, we stop.
+    if (id.x >= _AgentCount)
+    {
+        // We leave early so extra threads do not touch invalid memory.
+        return;
+    }
+
+    // We read this thread's agent position from the GPU buffer.
+    float3 position = _Positions[id.x];
+
+    // We move that position a tiny fixed amount on +X.
+    position.x += 0.01;
+
+    // We write the updated position back into the same GPU buffer slot.
+    _Positions[id.x] = position;
+}

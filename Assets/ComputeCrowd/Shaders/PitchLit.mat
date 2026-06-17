@@ -1,0 +1,90 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: PitchLit
+  m_Shader: {fileID: 4800000, guid: 2e8f44cdbcb2438cbd6592bc30d8dbef, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _BaseMap:
+        m_Texture: {fileID: 2800000, guid: 0c33404754798461a9106594b9e61cef, type: 3}
+        m_Scale: {x: 12, y: 12}
+        m_Offset: {x: 0, y: 0}
+    - _FieldLinesMap:
+        m_Texture: {fileID: 2800000, guid: 3fae8f2d4be904702a58482db06b3f81, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _LargeNoiseMap:
+        m_Texture: {fileID: 2800000, guid: 90554d4257fcb443f8a9e492a6ad703b, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _LawnStripeMap:
+        m_Texture: {fileID: 2800000, guid: b5e42a83ea7f241dda623a3f3e2f63fc, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _NormalMap:
+        m_Texture: {fileID: 2800000, guid: 6c3ffaee1d7a5483cb5a9089607e6281, type: 3}
+        m_Scale: {x: 16, y: 16}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _AlphaClip: 0
+    - _AmbientStrength: 1
+    - _Blend: 0
+    - _Cull: 2
+    - _Cutoff: 0.5
+    - _DstBlend: 0
+    - _LargeNoiseContrast: 0.97
+    - _LargeNoiseScale: 1
+    - _LargeNoiseStrength: -0.07
+    - _LawnHighlight2Contrast: 4
+    - _LawnHighlight2Scale: 2
+    - _LawnHighlight2Strength: 0.025
+    - _LawnHighlightContrast: 0.524
+    - _LawnHighlightScale: 2.9
+    - _LawnHighlightStrength: 0.203
+    - _LawnStripe2RotationDegrees: 39.263
+    - _LawnStripe2Strength: 0.677
+    - _LawnStripe2TextureScale: 13.438
+    - _MaterialHighlightStrength: 0
+    - _MaterialIsUnlit: 0
+    - _MaterialReceivesShadows: 1
+    - _NormalStrength: 1.5
+    - _Opacity: 1
+    - _Smoothness: 0
+    - _SpecularStrength: 0.039
+    - _SrcBlend: 1
+    - _Surface: 0
+    - _UseBaseTexture: 1
+    - _UseNormalMap: 1
+    - _UseSecondGrassSample: 1
+    - _ZWrite: 1
+    m_Colors:
+    - _BaseColor: {r: 0.345098, g: 0.588235, b: 0.313726, a: 1}
+    - _GrassColorA: {r: 0.85, g: 0.95, b: 0.82, a: 1}
+    - _GrassColorB: {r: 1.08, g: 1.02, b: 0.88, a: 1}
+    - _LawnHighlight2Color: {r: 0.99738795, g: 1, b: 0.8160377, a: 1}
+    - _LawnHighlightColor: {r: 1.2, g: 1.18, b: 1.1, a: 1}
+    - _LawnStripe2Center: {r: 0.499, g: 0.499, b: 0, a: 0}
+    - _LawnStripe2HalfSize: {r: 0.5, g: 0.5, b: 0, a: 0}
+    - _LawnStripe2TextureOffset: {r: 0.006, g: -0.051, b: 0, a: 0}
+    - _MaterialHighlightColor: {r: 1, g: 1, b: 1, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1
