@@ -1,46 +1,45 @@
 # Compute Shaders
 
-This project is set up to publish a Unity WebGL build to GitHub Pages through GitHub Actions.
+This project publishes a Unity WebGL build to GitHub Pages by committing the generated site files in `docs/`.
 
-## What is included
+## GitHub Pages setup
 
-- Unity WebGL build script: `Assets/Editor/GitHubPagesWebGLBuild.cs`
-- GitHub Pages workflow: `.github/workflows/deploy-webgl-pages.yml`
-- Unity-focused `.gitignore`
+In the GitHub repository:
 
-## First-time setup
+1. Open `Settings > Pages`
+2. Set `Build and deployment` to `Deploy from a branch`
+3. Select branch `main`
+4. Select folder `/docs`
+5. Save
 
-1. Create a new GitHub repository for this project.
-2. Initialize git locally in this folder.
-3. Commit and push to the `main` branch.
-4. In GitHub, open `Settings > Pages` and set `Build and deployment` to `GitHub Actions`.
-5. Add a repository secret named `UNITY_LICENSE`.
+## Unity build settings
 
-## Unity license secret
+Build WebGL directly into the repository `docs` folder:
 
-The workflow uses `game-ci/unity-builder`, which requires a Unity license in GitHub Actions.
+- Output folder: `docs`
+- Recommended compression for simple GitHub Pages hosting: `Disabled`
 
-For a personal license, the common approach is:
+After a successful build, this structure should exist:
 
-1. Generate a Unity activation file locally.
-2. Activate it through Unity's license flow.
-3. Paste the resulting license content into the `UNITY_LICENSE` GitHub secret.
+- `docs/index.html`
+- `docs/Build/...`
+- `docs/TemplateData/...`
+- `docs/.nojekyll`
 
-GameCI's documentation covers the exact current license setup steps:
+## Publish flow
 
-- https://game.ci/docs/github/activation
-- https://game.ci/docs/github/builder
+From the repository root:
 
-## Deploying
+```bash
+git add docs
+git commit -m "Publish WebGL build"
+git push
+```
 
-Every push to `main` triggers a WebGL build and deploys it to GitHub Pages.
+GitHub Pages will then publish the site from `main:/docs`.
 
-You can also trigger it manually from the `Actions` tab with `Deploy Unity WebGL to GitHub Pages`.
+## Site URL
 
-## Expected site URL
+For this repository, the site URL is:
 
-Your Pages URL will be:
-
-`https://<github-username>.github.io/<repository-name>/`
-
-GitHub will also show the final URL on the deployed workflow run and in the repository Pages settings.
+`https://laborio.github.io/compute-shaders/`
