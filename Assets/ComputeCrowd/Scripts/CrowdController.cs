@@ -49,6 +49,15 @@ public class CrowdController : MonoBehaviour
         Stand = 2,
     }
 
+    private enum DebugRenderMode
+    {
+        Normal = 0,
+        BillboardsOnly = 1,
+        UnskinnedLit = 2,
+        UnskinnedSolid = 3,
+        SkinnedSolid = 4,
+    }
+
     private struct ClipBakeInfo
     {
         public RuntimeClip clip;
@@ -132,6 +141,7 @@ public class CrowdController : MonoBehaviour
 
     [Header("Debug")]
     [SerializeField] private bool drawChunkGizmos = true;
+    [SerializeField] private DebugRenderMode debugRenderMode = DebugRenderMode.Normal;
 
     private readonly Plane[] frustumPlanes = new Plane[6];
     private readonly List<Chunk> chunks = new();
@@ -752,7 +762,11 @@ public class CrowdController : MonoBehaviour
             colorGBatch[countInBatch] = outfit.colorG;
             colorBBatch[countInBatch] = outfit.colorB;
             colorABatch[countInBatch] = outfit.colorA;
-            animDataBatch[countInBatch] = new Vector4((float)runtimeClip, state.clipTime, 0f, 0f);
+            animDataBatch[countInBatch] = new Vector4(
+                (float)runtimeClip,
+                state.clipTime,
+                ResolveRenderModeFlag(false),
+                ResolveDebugModeFlag());
             frameVisibleInstanceCount++;
             countInBatch++;
 
@@ -797,7 +811,11 @@ public class CrowdController : MonoBehaviour
                 colorGBatch[countInBatch] = outfit.colorG;
                 colorBBatch[countInBatch] = outfit.colorB;
                 colorABatch[countInBatch] = outfit.colorA;
-                animDataBatch[countInBatch] = new Vector4((float)runtimeClip, state.clipTime, 1f, 0f);
+                animDataBatch[countInBatch] = new Vector4(
+                    (float)runtimeClip,
+                    state.clipTime,
+                    ResolveRenderModeFlag(true),
+                    ResolveDebugModeFlag());
                 frameVisibleInstanceCount++;
                 countInBatch++;
 
@@ -938,6 +956,21 @@ public class CrowdController : MonoBehaviour
             PlaybackState.StandingUp => RuntimeClip.Stand,
             _ => RuntimeClip.Idle,
         };
+    }
+
+    private float ResolveRenderModeFlag(bool isBillboardBatch)
+    {
+        if (debugRenderMode == DebugRenderMode.BillboardsOnly)
+        {
+            return 1f;
+        }
+
+        return isBillboardBatch ? 1f : 0f;
+    }
+
+    private float ResolveDebugModeFlag()
+    {
+        return (float)debugRenderMode;
     }
 
     private Mesh CreateBillboardMesh()

@@ -156,6 +156,7 @@ Shader "ComputeCrowd/CrowdRender"
 
                 float4 animData = UNITY_ACCESS_INSTANCED_PROP(PerInstance, _AnimData);
                 output.renderMode = animData.z;
+                float debugMode = animData.w;
 
                 if (animData.z > 0.5)
                 {
@@ -166,8 +167,18 @@ Shader "ComputeCrowd/CrowdRender"
                     return output;
                 }
 
-                float3 skinnedPositionOS = SkinPosition(input.positionOS, input.weights, input.indices, animData);
-                float3 skinnedNormalOS = SkinNormal(input.normalOS, input.weights, input.indices, animData);
+                float3 skinnedPositionOS;
+                float3 skinnedNormalOS;
+                if (debugMode > 1.5 && debugMode < 3.5)
+                {
+                    skinnedPositionOS = input.positionOS.xyz;
+                    skinnedNormalOS = normalize(input.normalOS);
+                }
+                else
+                {
+                    skinnedPositionOS = SkinPosition(input.positionOS, input.weights, input.indices, animData);
+                    skinnedNormalOS = SkinNormal(input.normalOS, input.weights, input.indices, animData);
+                }
 
                 VertexPositionInputs positionInputs = GetVertexPositionInputs(skinnedPositionOS);
                 output.positionCS = positionInputs.positionCS;
@@ -188,6 +199,17 @@ Shader "ComputeCrowd/CrowdRender"
             half4 frag(Varyings input) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(input);
+                float debugMode = UNITY_ACCESS_INSTANCED_PROP(PerInstance, _AnimData).w;
+
+                if (debugMode > 2.5 && debugMode < 3.5)
+                {
+                    return half4(1.0h, 0.0h, 1.0h, 1.0h);
+                }
+
+                if (debugMode > 3.5)
+                {
+                    return half4(0.0h, 1.0h, 0.35h, 1.0h);
+                }
 
                 half3 albedo;
                 if (input.renderMode > 0.5)
