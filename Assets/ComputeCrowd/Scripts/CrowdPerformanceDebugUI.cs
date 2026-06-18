@@ -256,6 +256,8 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
                 builder.AppendLine($"controller[{i}].mode: {controller.ActiveDebugRenderModeName}");
                 builder.AppendLine($"controller[{i}].webglBillboardFallback: {controller.IsWebGLBillboardFallbackActive}");
                 builder.AppendLine($"controller[{i}].visibleInstances: {controller.LastVisibleInstanceCount}");
+                builder.AppendLine($"controller[{i}].visibleMeshInstances: {controller.LastVisibleMeshInstanceCount}");
+                builder.AppendLine($"controller[{i}].visibleBillboardInstances: {controller.LastVisibleBillboardInstanceCount}");
                 builder.AppendLine($"controller[{i}].visibleChunks: {controller.LastVisibleChunkCount}");
                 builder.AppendLine($"controller[{i}].drawCalls: {controller.LastDrawCallCount}");
                 builder.AppendLine($"controller[{i}].setPass: {controller.LastSetPassCount}");
@@ -264,6 +266,9 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
                 builder.AppendLine($"controller[{i}].billboardMaterials: {controller.BillboardMaterialCount}");
                 builder.AppendLine($"controller[{i}].usesDedicatedBillboardShader: {controller.UsesDedicatedBillboardShader}");
                 builder.AppendLine($"controller[{i}].billboardShaderName: {controller.BillboardShaderName}");
+                builder.AppendLine($"controller[{i}].activeLod1Distance: {controller.ActiveLod1Distance:0.##}");
+                builder.AppendLine($"controller[{i}].activeLod2Distance: {controller.ActiveLod2Distance:0.##}");
+                builder.AppendLine($"controller[{i}].activeBillboardDistance: {controller.ActiveBillboardDistance:0.##}");
                 builder.AppendLine($"controller[{i}].hasPoseTexture: {controller.HasPoseTexture}");
                 builder.AppendLine($"controller[{i}].runtimeBoneCount: {controller.RuntimeBoneCount}");
                 builder.AppendLine($"controller[{i}].runtimeMaterialInstancing: {controller.RuntimeMaterialInstancingEnabled}");

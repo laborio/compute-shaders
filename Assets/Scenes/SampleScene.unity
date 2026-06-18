@@ -991,6 +991,10 @@ MonoBehaviour:
   lod1Distance: 8
   lod2Distance: 12
   billboardDistance: 20
+  useWebGLLodDistanceOverrides: 1
+  webGLLod1Distance: 4
+  webGLLod2Distance: 7
+  webGLBillboardDistance: 10
   billboardScale: 0.92
   randomSeed: 7
   standingHoldRange: {x: 10, y: 20}
@@ -1008,7 +1012,7 @@ MonoBehaviour:
     billboardVariant: 1
   drawChunkGizmos: 1
   debugRenderMode: 0
-  useWebGLBillboardFallback: 1
+  useWebGLBillboardFallback: 0
 --- !u!4 &301947692
 Transform:
   m_ObjectHideFlags: 0
@@ -4962,6 +4966,10 @@ MonoBehaviour:
   lod1Distance: 8
   lod2Distance: 12
   billboardDistance: 20
+  useWebGLLodDistanceOverrides: 1
+  webGLLod1Distance: 4
+  webGLLod2Distance: 7
+  webGLBillboardDistance: 10
   billboardScale: 0.92
   randomSeed: 7
   standingHoldRange: {x: 10, y: 20}
@@ -4979,7 +4987,7 @@ MonoBehaviour:
     billboardVariant: 1
   drawChunkGizmos: 1
   debugRenderMode: 0
-  useWebGLBillboardFallback: 1
+  useWebGLBillboardFallback: 0
 --- !u!4 &1651472323
 Transform:
   m_ObjectHideFlags: 0

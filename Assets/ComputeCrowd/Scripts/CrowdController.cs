@@ -112,6 +112,10 @@ public class CrowdController : MonoBehaviour
     [SerializeField] private float lod1Distance = 18f;
     [SerializeField] private float lod2Distance = 32f;
     [SerializeField] private float billboardDistance = 48f;
+    [SerializeField] private bool useWebGLLodDistanceOverrides = true;
+    [SerializeField] private float webGLLod1Distance = 4f;
+    [SerializeField] private float webGLLod2Distance = 7f;
+    [SerializeField] private float webGLBillboardDistance = 10f;
     [SerializeField] private float billboardScale = 1f;
     [SerializeField] private int randomSeed = 7;
 
@@ -163,11 +167,15 @@ public class CrowdController : MonoBehaviour
     private int frameDrawCallCount;
     private int frameSetPassCount;
     private int frameVisibleInstanceCount;
+    private int frameVisibleMeshInstanceCount;
+    private int frameVisibleBillboardInstanceCount;
     private int frameVisibleChunkCount;
     private long frameTriangleCount;
     private int lastDrawCallCount;
     private int lastSetPassCount;
     private int lastVisibleInstanceCount;
+    private int lastVisibleMeshInstanceCount;
+    private int lastVisibleBillboardInstanceCount;
     private int lastVisibleChunkCount;
     private long lastTriangleCount;
     private int maxInstancesPerBatch;
@@ -181,6 +189,8 @@ public class CrowdController : MonoBehaviour
     public int LastDrawCallCount => lastDrawCallCount;
     public int LastSetPassCount => lastSetPassCount;
     public int LastVisibleInstanceCount => lastVisibleInstanceCount;
+    public int LastVisibleMeshInstanceCount => lastVisibleMeshInstanceCount;
+    public int LastVisibleBillboardInstanceCount => lastVisibleBillboardInstanceCount;
     public int LastVisibleChunkCount => lastVisibleChunkCount;
     public long LastTriangleCount => lastTriangleCount;
     public int LastShadowCasterCount => 0;
@@ -198,6 +208,9 @@ public class CrowdController : MonoBehaviour
         billboardMaterials[0].shader != null
             ? billboardMaterials[0].shader.name
             : "<none>";
+    public float ActiveLod1Distance => ResolveLod1Distance();
+    public float ActiveLod2Distance => ResolveLod2Distance();
+    public float ActiveBillboardDistance => ResolveBillboardDistance();
     public bool HasPoseTexture => poseTexture != null;
     public int RuntimeBoneCount => crowdMesh != null ? crowdMesh.bindposes.Length : 0;
     public bool RuntimeMaterialInstancingEnabled => runtimeMaterial != null && runtimeMaterial.enableInstancing;
@@ -242,6 +255,9 @@ public class CrowdController : MonoBehaviour
         lod1Distance = Mathf.Max(0.1f, lod1Distance);
         lod2Distance = Mathf.Max(lod1Distance, lod2Distance);
         billboardDistance = Mathf.Max(lod2Distance, billboardDistance);
+        webGLLod1Distance = Mathf.Max(0.1f, webGLLod1Distance);
+        webGLLod2Distance = Mathf.Max(webGLLod1Distance, webGLLod2Distance);
+        webGLBillboardDistance = Mathf.Max(webGLLod2Distance, webGLBillboardDistance);
         billboardScale = Mathf.Max(0.01f, billboardScale);
         standingHoldRange.x = Mathf.Max(0f, standingHoldRange.x);
         standingHoldRange.y = Mathf.Max(standingHoldRange.x, standingHoldRange.y);
@@ -735,6 +751,8 @@ public class CrowdController : MonoBehaviour
         frameDrawCallCount = 0;
         frameSetPassCount = 0;
         frameVisibleInstanceCount = 0;
+        frameVisibleMeshInstanceCount = 0;
+        frameVisibleBillboardInstanceCount = 0;
         frameVisibleChunkCount = 0;
         frameTriangleCount = 0;
 
@@ -754,6 +772,8 @@ public class CrowdController : MonoBehaviour
         lastDrawCallCount = frameDrawCallCount;
         lastSetPassCount = frameSetPassCount;
         lastVisibleInstanceCount = frameVisibleInstanceCount;
+        lastVisibleMeshInstanceCount = frameVisibleMeshInstanceCount;
+        lastVisibleBillboardInstanceCount = frameVisibleBillboardInstanceCount;
         lastVisibleChunkCount = frameVisibleChunkCount;
         lastTriangleCount = frameTriangleCount;
     }
@@ -797,6 +817,7 @@ public class CrowdController : MonoBehaviour
                 ResolveRenderModeFlag(false),
                 ResolveDebugModeFlag());
             frameVisibleInstanceCount++;
+            frameVisibleMeshInstanceCount++;
             countInBatch++;
 
             if (countInBatch == maxInstancesPerBatch)
@@ -851,6 +872,7 @@ public class CrowdController : MonoBehaviour
                 }
 
                 frameVisibleInstanceCount++;
+                frameVisibleBillboardInstanceCount++;
                 countInBatch++;
 
                 if (countInBatch == maxInstancesPerBatch)
@@ -870,6 +892,9 @@ public class CrowdController : MonoBehaviour
     private Mesh SelectLodMesh(Chunk chunk, out bool useBillboard)
     {
         useBillboard = false;
+        float activeLod1Distance = ResolveLod1Distance();
+        float activeLod2Distance = ResolveLod2Distance();
+        float activeBillboardDistance = ResolveBillboardDistance();
 
         if (ShouldForceBillboards())
         {
@@ -893,18 +918,18 @@ public class CrowdController : MonoBehaviour
         }
 
         float distance = Vector3.Distance(Camera.main.transform.position, chunk.bounds.center);
-        if (billboardMesh != null && billboardMaterials != null && billboardMaterials.Length > 0 && distance >= billboardDistance)
+        if (billboardMesh != null && billboardMaterials != null && billboardMaterials.Length > 0 && distance >= activeBillboardDistance)
         {
             useBillboard = true;
             return billboardMesh;
         }
 
-        if (lodMeshes.Length >= 3 && distance >= lod2Distance)
+        if (lodMeshes.Length >= 3 && distance >= activeLod2Distance)
         {
             return lodMeshes[2];
         }
 
-        if (lodMeshes.Length >= 2 && distance >= lod1Distance)
+        if (lodMeshes.Length >= 2 && distance >= activeLod1Distance)
         {
             return lodMeshes[1];
         }
@@ -1071,6 +1096,27 @@ public class CrowdController : MonoBehaviour
     private bool ShouldForceBillboards()
     {
         return ResolveActiveDebugRenderMode() == DebugRenderMode.BillboardsOnly;
+    }
+
+    private float ResolveLod1Distance()
+    {
+        return Application.platform == RuntimePlatform.WebGLPlayer && useWebGLLodDistanceOverrides
+            ? webGLLod1Distance
+            : lod1Distance;
+    }
+
+    private float ResolveLod2Distance()
+    {
+        return Application.platform == RuntimePlatform.WebGLPlayer && useWebGLLodDistanceOverrides
+            ? webGLLod2Distance
+            : lod2Distance;
+    }
+
+    private float ResolveBillboardDistance()
+    {
+        return Application.platform == RuntimePlatform.WebGLPlayer && useWebGLLodDistanceOverrides
+            ? webGLBillboardDistance
+            : billboardDistance;
     }
 
     private Mesh CreateBillboardMesh()
