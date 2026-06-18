@@ -202,6 +202,13 @@ public class CrowdController : MonoBehaviour
     public int BillboardMaterialCount => billboardMaterials?.Length ?? 0;
     public int DebugBillboardMaterialCount => debugBillboardMaterials?.Length ?? 0;
     public bool UsesDedicatedBillboardShader => UsesDedicatedBillboardMaterial();
+    public string BillboardShaderName =>
+        billboardMaterials != null &&
+        billboardMaterials.Length > 0 &&
+        billboardMaterials[0] != null &&
+        billboardMaterials[0].shader != null
+            ? billboardMaterials[0].shader.name
+            : "<none>";
     public bool HasPoseTexture => poseTexture != null;
     public int RuntimeBoneCount => crowdMesh != null ? crowdMesh.bindposes.Length : 0;
     public bool RuntimeMaterialInstancingEnabled => runtimeMaterial != null && runtimeMaterial.enableInstancing;
@@ -327,7 +334,9 @@ public class CrowdController : MonoBehaviour
             Debug.Log(
                 $"CrowdController WebGL mode: {ResolveActiveDebugRenderMode()}, " +
                 $"instancing={SystemInfo.supportsInstancing}, " +
-                $"billboardsReady={billboardMesh != null && billboardMaterials != null && billboardMaterials.Length > 0}");
+                $"billboardsReady={billboardMesh != null && billboardMaterials != null && billboardMaterials.Length > 0}, " +
+                $"dedicatedBillboardShader={UsesDedicatedBillboardMaterial()}, " +
+                $"billboardShader={BillboardShaderName}");
         }
 
         if (hideSourceCharacter && resolvedSourceRoot != null && resolvedSourceRoot.scene.IsValid())
@@ -1315,15 +1324,13 @@ public class CrowdController : MonoBehaviour
         frameSetPassCount++;
         frameTriangleCount += GetTriangleCount(drawMesh) * (long)count;
 
-        materialPropertyBlock.Clear();
-
         Graphics.DrawMeshInstanced(
             drawMesh,
             0,
             material,
             matrixBatch,
             count,
-            materialPropertyBlock,
+            null,
             ShadowCastingMode.Off,
             false,
             gameObject.layer);
