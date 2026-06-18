@@ -255,7 +255,6 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
                 builder.AppendLine($"controller[{i}].active: {controller.isActiveAndEnabled}");
                 builder.AppendLine($"controller[{i}].mode: {controller.ActiveDebugRenderModeName}");
                 builder.AppendLine($"controller[{i}].webglBillboardFallback: {controller.IsWebGLBillboardFallbackActive}");
-                builder.AppendLine($"controller[{i}].webglNonInstancedFallback: {controller.IsWebGLNonInstancedFallbackActive}");
                 builder.AppendLine($"controller[{i}].visibleInstances: {controller.LastVisibleInstanceCount}");
                 builder.AppendLine($"controller[{i}].visibleChunks: {controller.LastVisibleChunkCount}");
                 builder.AppendLine($"controller[{i}].drawCalls: {controller.LastDrawCallCount}");
@@ -265,7 +264,6 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
                 builder.AppendLine($"controller[{i}].billboardMaterials: {controller.BillboardMaterialCount}");
                 builder.AppendLine($"controller[{i}].usesDedicatedBillboardShader: {controller.UsesDedicatedBillboardShader}");
                 builder.AppendLine($"controller[{i}].billboardShaderName: {controller.BillboardShaderName}");
-                builder.AppendLine($"controller[{i}].debugBillboardMaterials: {controller.DebugBillboardMaterialCount}");
                 builder.AppendLine($"controller[{i}].hasPoseTexture: {controller.HasPoseTexture}");
                 builder.AppendLine($"controller[{i}].runtimeBoneCount: {controller.RuntimeBoneCount}");
                 builder.AppendLine($"controller[{i}].runtimeMaterialInstancing: {controller.RuntimeMaterialInstancingEnabled}");

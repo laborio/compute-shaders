@@ -974,8 +974,6 @@ MonoBehaviour:
   outfitDataMap: {fileID: 2800000, guid: 558416a6f918c4f2a95173ed680ec77f, type: 3}
   materialTemplate: {fileID: 2100000, guid: c1b01ad6e8a2149e8b743cc06fbbadb4, type: 2}
   billboardMaterialTemplate: {fileID: 2100000, guid: e41be07ebc864591b5371a9de4f6fa20, type: 2}
-  debugBillboardMaterialTemplate: {fileID: 2100000, guid: 0c7e974e8b1644b2b847c325a78a3cd5, type: 2}
-  useDebugBillboardMaterialInWebGL: 0
   hideSourceCharacter: 0
   modelRotationEuler: {x: -90, y: 0, z: 0}
   instanceCount: 3000
@@ -1011,7 +1009,6 @@ MonoBehaviour:
   drawChunkGizmos: 1
   debugRenderMode: 0
   useWebGLBillboardFallback: 1
-  useWebGLNonInstancedFallback: 0
 --- !u!4 &301947692
 Transform:
   m_ObjectHideFlags: 0
@@ -4948,8 +4945,6 @@ MonoBehaviour:
   outfitDataMap: {fileID: 2800000, guid: 558416a6f918c4f2a95173ed680ec77f, type: 3}
   materialTemplate: {fileID: 2100000, guid: c1b01ad6e8a2149e8b743cc06fbbadb4, type: 2}
   billboardMaterialTemplate: {fileID: 2100000, guid: e41be07ebc864591b5371a9de4f6fa20, type: 2}
-  debugBillboardMaterialTemplate: {fileID: 2100000, guid: 0c7e974e8b1644b2b847c325a78a3cd5, type: 2}
-  useDebugBillboardMaterialInWebGL: 0
   hideSourceCharacter: 0
   modelRotationEuler: {x: -90, y: 0, z: 0}
   instanceCount: 1000
@@ -4985,7 +4980,6 @@ MonoBehaviour:
   drawChunkGizmos: 1
   debugRenderMode: 0
   useWebGLBillboardFallback: 1
-  useWebGLNonInstancedFallback: 0
 --- !u!4 &1651472323
 Transform:
   m_ObjectHideFlags: 0
