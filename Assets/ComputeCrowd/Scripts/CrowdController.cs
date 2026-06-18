@@ -142,6 +142,8 @@ public class CrowdController : MonoBehaviour
     [Header("Debug")]
     [SerializeField] private bool drawChunkGizmos = true;
     [SerializeField] private DebugRenderMode debugRenderMode = DebugRenderMode.Normal;
+    [SerializeField] private bool useWebGLBillboardFallback = true;
+    [SerializeField] private bool useWebGLNonInstancedFallback = true;
 
     private readonly Plane[] frustumPlanes = new Plane[6];
     private readonly List<Chunk> chunks = new();
@@ -297,6 +299,14 @@ public class CrowdController : MonoBehaviour
         AllocateBatchBuffers();
         materialPropertyBlock = new MaterialPropertyBlock();
         BuildInstances();
+
+        if (Application.platform == RuntimePlatform.WebGLPlayer)
+        {
+            Debug.Log(
+                $"CrowdController WebGL mode: {ResolveActiveDebugRenderMode()}, " +
+                $"instancing={SystemInfo.supportsInstancing}, " +
+                $"billboardsReady={billboardMesh != null && billboardMaterials != null && billboardMaterials.Length > 0}");
+        }
 
         if (hideSourceCharacter && resolvedSourceRoot != null && resolvedSourceRoot.scene.IsValid())
         {
@@ -731,6 +741,12 @@ public class CrowdController : MonoBehaviour
 
     private void DrawChunk(Chunk chunk)
     {
+        if (UseNonInstancedWebGLFallback())
+        {
+            DrawChunkNonInstanced(chunk);
+            return;
+        }
+
         bool useBillboard;
         Mesh drawMesh = SelectLodMesh(chunk, out useBillboard);
         if (drawMesh == null)
@@ -745,6 +761,24 @@ public class CrowdController : MonoBehaviour
         }
 
         DrawMeshChunk(chunk, drawMesh);
+    }
+
+    private void DrawChunkNonInstanced(Chunk chunk)
+    {
+        bool useBillboard;
+        Mesh drawMesh = SelectLodMesh(chunk, out useBillboard);
+        if (drawMesh == null)
+        {
+            return;
+        }
+
+        if (useBillboard)
+        {
+            DrawBillboardChunkNonInstanced(chunk, drawMesh);
+            return;
+        }
+
+        DrawMeshChunkNonInstanced(chunk, drawMesh);
     }
 
     private void DrawMeshChunk(Chunk chunk, Mesh drawMesh)
@@ -780,6 +814,24 @@ public class CrowdController : MonoBehaviour
         if (countInBatch > 0)
         {
             FlushBatch(drawMesh, runtimeMaterial, countInBatch);
+        }
+    }
+
+    private void DrawMeshChunkNonInstanced(Chunk chunk, Mesh drawMesh)
+    {
+        for (int i = 0; i < chunk.instanceIndices.Count; i++)
+        {
+            int instanceIndex = chunk.instanceIndices[i];
+            InstanceState state = instances[instanceIndex];
+            OutfitPreset outfit = outfits[Mathf.Clamp(state.outfitIndex, 0, outfits.Length - 1)];
+            RuntimeClip runtimeClip = GetRuntimeClip(state.playbackState);
+            Vector4 animData = new(
+                (float)runtimeClip,
+                state.clipTime,
+                ResolveRenderModeFlag(false),
+                ResolveDebugModeFlag());
+
+            DrawSingleInstance(drawMesh, runtimeMaterial, state.matrix, outfit, animData);
         }
     }
 
@@ -833,9 +885,56 @@ public class CrowdController : MonoBehaviour
         }
     }
 
+    private void DrawBillboardChunkNonInstanced(Chunk chunk, Mesh drawMesh)
+    {
+        Vector3 cameraPosition = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
+        for (int i = 0; i < chunk.instanceIndices.Count; i++)
+        {
+            int instanceIndex = chunk.instanceIndices[i];
+            InstanceState state = instances[instanceIndex];
+            int variantIndex = GetBillboardVariantIndex(state.outfitIndex);
+            if (variantIndex < 0 || variantIndex >= billboardMaterials.Length)
+            {
+                continue;
+            }
+
+            Material variantMaterial = billboardMaterials[variantIndex];
+            if (variantMaterial == null)
+            {
+                continue;
+            }
+
+            OutfitPreset outfit = outfits[Mathf.Clamp(state.outfitIndex, 0, outfits.Length - 1)];
+            RuntimeClip runtimeClip = GetRuntimeClip(state.playbackState);
+            Vector4 animData = new(
+                (float)runtimeClip,
+                state.clipTime,
+                ResolveRenderModeFlag(true),
+                ResolveDebugModeFlag());
+
+            DrawSingleInstance(
+                drawMesh,
+                variantMaterial,
+                CreateBillboardMatrix(state, cameraPosition),
+                outfit,
+                animData);
+        }
+    }
+
     private Mesh SelectLodMesh(Chunk chunk, out bool useBillboard)
     {
         useBillboard = false;
+
+        if (ShouldForceBillboards())
+        {
+            if (billboardMesh != null && billboardMaterials != null && billboardMaterials.Length > 0)
+            {
+                useBillboard = true;
+                return billboardMesh;
+            }
+
+            return crowdMesh;
+        }
 
         if (lodMeshes == null || lodMeshes.Length == 0)
         {
@@ -960,7 +1059,7 @@ public class CrowdController : MonoBehaviour
 
     private float ResolveRenderModeFlag(bool isBillboardBatch)
     {
-        if (debugRenderMode == DebugRenderMode.BillboardsOnly)
+        if (ResolveActiveDebugRenderMode() == DebugRenderMode.BillboardsOnly)
         {
             return 1f;
         }
@@ -970,7 +1069,34 @@ public class CrowdController : MonoBehaviour
 
     private float ResolveDebugModeFlag()
     {
-        return (float)debugRenderMode;
+        return (float)ResolveActiveDebugRenderMode();
+    }
+
+    private DebugRenderMode ResolveActiveDebugRenderMode()
+    {
+        if (debugRenderMode != DebugRenderMode.Normal)
+        {
+            return debugRenderMode;
+        }
+
+        bool webGlFallbackAvailable =
+            useWebGLBillboardFallback &&
+            Application.platform == RuntimePlatform.WebGLPlayer &&
+            billboardMesh != null &&
+            billboardMaterials != null &&
+            billboardMaterials.Length > 0;
+
+        return webGlFallbackAvailable ? DebugRenderMode.BillboardsOnly : DebugRenderMode.Normal;
+    }
+
+    private bool ShouldForceBillboards()
+    {
+        return ResolveActiveDebugRenderMode() == DebugRenderMode.BillboardsOnly;
+    }
+
+    private bool UseNonInstancedWebGLFallback()
+    {
+        return useWebGLNonInstancedFallback && Application.platform == RuntimePlatform.WebGLPlayer;
     }
 
     private Mesh CreateBillboardMesh()
@@ -1067,6 +1193,37 @@ public class CrowdController : MonoBehaviour
             ShadowCastingMode.Off,
             false,
             gameObject.layer);
+    }
+
+    private void DrawSingleInstance(Mesh drawMesh, Material material, Matrix4x4 matrix, OutfitPreset outfit, Vector4 animData)
+    {
+        if (drawMesh == null || material == null || materialPropertyBlock == null)
+        {
+            return;
+        }
+
+        frameDrawCallCount++;
+        frameSetPassCount++;
+        frameVisibleInstanceCount++;
+        frameTriangleCount += GetTriangleCount(drawMesh);
+
+        materialPropertyBlock.Clear();
+        materialPropertyBlock.SetVector(ColorRId, outfit.colorR);
+        materialPropertyBlock.SetVector(ColorGId, outfit.colorG);
+        materialPropertyBlock.SetVector(ColorBId, outfit.colorB);
+        materialPropertyBlock.SetVector(ColorAId, outfit.colorA);
+        materialPropertyBlock.SetVector(AnimDataId, animData);
+
+        Graphics.DrawMesh(
+            drawMesh,
+            matrix,
+            material,
+            gameObject.layer,
+            null,
+            0,
+            materialPropertyBlock,
+            ShadowCastingMode.Off,
+            false);
     }
 
     private static int GetTriangleCount(Mesh mesh)
