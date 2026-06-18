@@ -92,6 +92,7 @@ public class CrowdController : MonoBehaviour
     [SerializeField] private Texture2D billboardColor02;
     [SerializeField] private Texture2D outfitDataMap;
     [SerializeField] private Material materialTemplate;
+    [SerializeField] private Material debugBillboardMaterialTemplate;
     [SerializeField] private bool hideSourceCharacter = true;
     [SerializeField] private Vector3 modelRotationEuler = new(-90f, 0f, 0f);
 
@@ -1048,8 +1049,8 @@ public class CrowdController : MonoBehaviour
 
     private Material[] BuildDebugBillboardMaterials()
     {
-        Shader debugShader = Shader.Find("ComputeCrowd/BillboardDebug");
-        if (debugShader == null)
+        Material template = debugBillboardMaterialTemplate;
+        if (template == null || template.shader == null)
         {
             return Array.Empty<Material>();
         }
@@ -1064,7 +1065,7 @@ public class CrowdController : MonoBehaviour
                 continue;
             }
 
-            Material material = new(debugShader);
+            Material material = new(template);
             material.SetTexture(BaseMapId, variant);
             materials.Add(material);
         }
