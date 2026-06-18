@@ -150,6 +150,7 @@ public class CrowdController : MonoBehaviour
     private MaterialPropertyBlock materialPropertyBlock;
     private Material runtimeMaterial;
     private Material[] billboardMaterials;
+    private Material[] debugBillboardMaterials;
     private Texture2D poseTexture;
     private Mesh crowdMesh;
     private Mesh billboardMesh;
@@ -295,6 +296,7 @@ public class CrowdController : MonoBehaviour
         runtimeMaterial.SetVector(ClipMeta2Id, PackClipMeta(RuntimeClip.Stand));
 
         billboardMaterials = BuildBillboardMaterials();
+        debugBillboardMaterials = BuildDebugBillboardMaterials();
 
         AllocateBatchBuffers();
         materialPropertyBlock = new MaterialPropertyBlock();
@@ -840,7 +842,7 @@ public class CrowdController : MonoBehaviour
         Vector3 cameraPosition = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
         for (int variantIndex = 0; variantIndex < billboardMaterials.Length; variantIndex++)
         {
-            Material variantMaterial = billboardMaterials[variantIndex];
+            Material variantMaterial = ResolveBillboardMaterial(variantIndex);
             if (variantMaterial == null)
             {
                 continue;
@@ -898,7 +900,7 @@ public class CrowdController : MonoBehaviour
                 continue;
             }
 
-            Material variantMaterial = billboardMaterials[variantIndex];
+            Material variantMaterial = ResolveBillboardMaterial(variantIndex);
             if (variantMaterial == null)
             {
                 continue;
@@ -1033,6 +1035,32 @@ public class CrowdController : MonoBehaviour
         return materials.ToArray();
     }
 
+    private Material[] BuildDebugBillboardMaterials()
+    {
+        Shader debugShader = Shader.Find("ComputeCrowd/BillboardDebug");
+        if (debugShader == null)
+        {
+            return Array.Empty<Material>();
+        }
+
+        List<Material> materials = new();
+        Texture2D[] variants = { billboardColor01, billboardColor02 };
+        for (int variantIndex = 0; variantIndex < variants.Length; variantIndex++)
+        {
+            Texture2D variant = variants[variantIndex];
+            if (variant == null)
+            {
+                continue;
+            }
+
+            Material material = new(debugShader);
+            material.SetTexture(BaseMapId, variant);
+            materials.Add(material);
+        }
+
+        return materials.ToArray();
+    }
+
     private int GetBillboardVariantIndex(int outfitIndex)
     {
         if (billboardMaterials == null || billboardMaterials.Length == 0)
@@ -1043,6 +1071,23 @@ public class CrowdController : MonoBehaviour
         int presetIndex = Mathf.Clamp(outfitIndex, 0, outfits.Length - 1);
         int variantIndex = outfits[presetIndex].billboardVariant;
         return Mathf.Clamp(variantIndex, 0, billboardMaterials.Length - 1);
+    }
+
+    private Material ResolveBillboardMaterial(int variantIndex)
+    {
+        bool useDebugMaterial =
+            Application.platform == RuntimePlatform.WebGLPlayer &&
+            UseNonInstancedWebGLFallback() &&
+            debugBillboardMaterials != null &&
+            debugBillboardMaterials.Length > 0;
+
+        Material[] source = useDebugMaterial ? debugBillboardMaterials : billboardMaterials;
+        if (source == null || variantIndex < 0 || variantIndex >= source.Length)
+        {
+            return null;
+        }
+
+        return source[variantIndex];
     }
 
     private static RuntimeClip GetRuntimeClip(PlaybackState playbackState)
@@ -1302,6 +1347,28 @@ public class CrowdController : MonoBehaviour
             }
 
             billboardMaterials = null;
+        }
+
+        if (debugBillboardMaterials != null)
+        {
+            for (int i = 0; i < debugBillboardMaterials.Length; i++)
+            {
+                if (debugBillboardMaterials[i] == null)
+                {
+                    continue;
+                }
+
+                if (Application.isPlaying)
+                {
+                    Destroy(debugBillboardMaterials[i]);
+                }
+                else
+                {
+                    DestroyImmediate(debugBillboardMaterials[i]);
+                }
+            }
+
+            debugBillboardMaterials = null;
         }
 
         if (poseTexture != null)
