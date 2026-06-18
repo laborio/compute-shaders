@@ -185,6 +185,17 @@ public class CrowdController : MonoBehaviour
     public int LastVisibleChunkCount => lastVisibleChunkCount;
     public long LastTriangleCount => lastTriangleCount;
     public int LastShadowCasterCount => 0;
+    public string ActiveDebugRenderModeName => ResolveActiveDebugRenderMode().ToString();
+    public bool IsWebGLBillboardFallbackActive =>
+        debugRenderMode == DebugRenderMode.Normal &&
+        ResolveActiveDebugRenderMode() == DebugRenderMode.BillboardsOnly;
+    public bool IsWebGLNonInstancedFallbackActive => UseNonInstancedWebGLFallback();
+    public bool HasBillboardMesh => billboardMesh != null;
+    public int BillboardMaterialCount => billboardMaterials?.Length ?? 0;
+    public int DebugBillboardMaterialCount => debugBillboardMaterials?.Length ?? 0;
+    public bool HasPoseTexture => poseTexture != null;
+    public int RuntimeBoneCount => crowdMesh != null ? crowdMesh.bindposes.Length : 0;
+    public bool RuntimeMaterialInstancingEnabled => runtimeMaterial != null && runtimeMaterial.enableInstancing;
 
     private void OnEnable()
     {
