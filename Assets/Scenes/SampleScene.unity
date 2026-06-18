@@ -1007,6 +1007,9 @@ MonoBehaviour:
     colorA: {r: 0, g: 0, b: 0, a: 1}
     billboardVariant: 1
   drawChunkGizmos: 1
+  debugRenderMode: 0
+  useWebGLBillboardFallback: 1
+  useWebGLNonInstancedFallback: 0
 --- !u!4 &301947692
 Transform:
   m_ObjectHideFlags: 0
@@ -4976,6 +4979,9 @@ MonoBehaviour:
     colorA: {r: 0, g: 0, b: 0, a: 1}
     billboardVariant: 1
   drawChunkGizmos: 1
+  debugRenderMode: 0
+  useWebGLBillboardFallback: 1
+  useWebGLNonInstancedFallback: 0
 --- !u!4 &1651472323
 Transform:
   m_ObjectHideFlags: 0
