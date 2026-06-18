@@ -23,6 +23,11 @@ public class CrowdController : MonoBehaviour
     private static readonly int ColorBId = Shader.PropertyToID("_ColorB");
     private static readonly int ColorAId = Shader.PropertyToID("_ColorA");
     private static readonly int AnimDataId = Shader.PropertyToID("_AnimData");
+    private static readonly int FallbackColorRId = Shader.PropertyToID("_FallbackColorR");
+    private static readonly int FallbackColorGId = Shader.PropertyToID("_FallbackColorG");
+    private static readonly int FallbackColorBId = Shader.PropertyToID("_FallbackColorB");
+    private static readonly int FallbackColorAId = Shader.PropertyToID("_FallbackColorA");
+    private static readonly int FallbackAnimDataId = Shader.PropertyToID("_FallbackAnimData");
 
     [Serializable]
     private struct OutfitPreset
@@ -148,6 +153,7 @@ public class CrowdController : MonoBehaviour
     [SerializeField] private bool drawChunkGizmos = true;
     [SerializeField] private DebugRenderMode debugRenderMode = DebugRenderMode.Normal;
     [SerializeField] private bool useWebGLBillboardFallback = true;
+    [SerializeField] private bool useWebGLNonInstancedMeshFallback = true;
 
     private readonly Plane[] frustumPlanes = new Plane[6];
     private readonly List<Chunk> chunks = new();
@@ -198,6 +204,8 @@ public class CrowdController : MonoBehaviour
     public bool IsWebGLBillboardFallbackActive =>
         debugRenderMode == DebugRenderMode.Normal &&
         ResolveActiveDebugRenderMode() == DebugRenderMode.BillboardsOnly;
+    public bool IsWebGLNonInstancedMeshFallbackActive =>
+        Application.platform == RuntimePlatform.WebGLPlayer && useWebGLNonInstancedMeshFallback;
     public bool HasBillboardMesh => billboardMesh != null;
     public int BillboardMaterialCount => billboardMaterials?.Length ?? 0;
     public bool UsesDedicatedBillboardShader => UsesDedicatedBillboardMaterial();
@@ -793,6 +801,12 @@ public class CrowdController : MonoBehaviour
             return;
         }
 
+        if (UseNonInstancedWebGLMeshFallback())
+        {
+            DrawMeshChunkNonInstanced(chunk, drawMesh);
+            return;
+        }
+
         DrawMeshChunk(chunk, drawMesh);
     }
 
@@ -830,6 +844,24 @@ public class CrowdController : MonoBehaviour
         if (countInBatch > 0)
         {
             FlushBatch(drawMesh, runtimeMaterial, countInBatch);
+        }
+    }
+
+    private void DrawMeshChunkNonInstanced(Chunk chunk, Mesh drawMesh)
+    {
+        for (int i = 0; i < chunk.instanceIndices.Count; i++)
+        {
+            int instanceIndex = chunk.instanceIndices[i];
+            InstanceState state = instances[instanceIndex];
+            OutfitPreset outfit = outfits[Mathf.Clamp(state.outfitIndex, 0, outfits.Length - 1)];
+            RuntimeClip runtimeClip = GetRuntimeClip(state.playbackState);
+            Vector4 animData = new(
+                (float)runtimeClip,
+                state.clipTime,
+                ResolveRenderModeFlag(false),
+                ResolveDebugModeFlag());
+
+            DrawSingleMeshInstance(drawMesh, runtimeMaterial, state.matrix, outfit, animData);
         }
     }
 
@@ -1098,6 +1130,11 @@ public class CrowdController : MonoBehaviour
         return ResolveActiveDebugRenderMode() == DebugRenderMode.BillboardsOnly;
     }
 
+    private bool UseNonInstancedWebGLMeshFallback()
+    {
+        return Application.platform == RuntimePlatform.WebGLPlayer && useWebGLNonInstancedMeshFallback;
+    }
+
     private float ResolveLod1Distance()
     {
         return Application.platform == RuntimePlatform.WebGLPlayer && useWebGLLodDistanceOverrides
@@ -1242,6 +1279,43 @@ public class CrowdController : MonoBehaviour
             ShadowCastingMode.Off,
             false,
             gameObject.layer);
+    }
+
+    private void DrawSingleMeshInstance(Mesh drawMesh, Material material, Matrix4x4 matrix, OutfitPreset outfit, Vector4 animData)
+    {
+        if (drawMesh == null || material == null || materialPropertyBlock == null)
+        {
+            return;
+        }
+
+        frameDrawCallCount++;
+        frameSetPassCount++;
+        frameVisibleInstanceCount++;
+        frameVisibleMeshInstanceCount++;
+        frameTriangleCount += GetTriangleCount(drawMesh);
+
+        materialPropertyBlock.Clear();
+        materialPropertyBlock.SetVector(ColorRId, outfit.colorR);
+        materialPropertyBlock.SetVector(ColorGId, outfit.colorG);
+        materialPropertyBlock.SetVector(ColorBId, outfit.colorB);
+        materialPropertyBlock.SetVector(ColorAId, outfit.colorA);
+        materialPropertyBlock.SetVector(AnimDataId, animData);
+        materialPropertyBlock.SetVector(FallbackColorRId, outfit.colorR);
+        materialPropertyBlock.SetVector(FallbackColorGId, outfit.colorG);
+        materialPropertyBlock.SetVector(FallbackColorBId, outfit.colorB);
+        materialPropertyBlock.SetVector(FallbackColorAId, outfit.colorA);
+        materialPropertyBlock.SetVector(FallbackAnimDataId, animData);
+
+        Graphics.DrawMesh(
+            drawMesh,
+            matrix,
+            material,
+            gameObject.layer,
+            null,
+            0,
+            materialPropertyBlock,
+            ShadowCastingMode.Off,
+            false);
     }
 
     private static int GetTriangleCount(Mesh mesh)

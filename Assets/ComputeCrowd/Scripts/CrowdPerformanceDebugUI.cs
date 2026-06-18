@@ -255,6 +255,7 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
                 builder.AppendLine($"controller[{i}].active: {controller.isActiveAndEnabled}");
                 builder.AppendLine($"controller[{i}].mode: {controller.ActiveDebugRenderModeName}");
                 builder.AppendLine($"controller[{i}].webglBillboardFallback: {controller.IsWebGLBillboardFallbackActive}");
+                builder.AppendLine($"controller[{i}].webglNonInstancedMeshFallback: {controller.IsWebGLNonInstancedMeshFallbackActive}");
                 builder.AppendLine($"controller[{i}].visibleInstances: {controller.LastVisibleInstanceCount}");
                 builder.AppendLine($"controller[{i}].visibleMeshInstances: {controller.LastVisibleMeshInstanceCount}");
                 builder.AppendLine($"controller[{i}].visibleBillboardInstances: {controller.LastVisibleBillboardInstanceCount}");
