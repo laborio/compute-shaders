@@ -5,6 +5,11 @@ Shader "ComputeCrowd/CrowdRender"
         _BaseMap("Base Map", 2D) = "white" {}
         _BillboardMap("Billboard Map", 2D) = "black" {}
         _OutfitDataMap("Outfit Data Map", 2D) = "black" {}
+        [HideInInspector] _FallbackColorR("Fallback Color R", Vector) = (1, 0, 0, 0)
+        [HideInInspector] _FallbackColorG("Fallback Color G", Vector) = (0, 1, 0, 0)
+        [HideInInspector] _FallbackColorB("Fallback Color B", Vector) = (0, 0, 1, 0)
+        [HideInInspector] _FallbackColorA("Fallback Color A", Vector) = (1, 1, 1, 0)
+        [HideInInspector] _FallbackAnimData("Fallback Anim Data", Vector) = (0, 0, 0, 0)
     }
 
     SubShader
@@ -45,6 +50,11 @@ Shader "ComputeCrowd/CrowdRender"
                 float4 _ClipMeta0;
                 float4 _ClipMeta1;
                 float4 _ClipMeta2;
+                float4 _FallbackColorR;
+                float4 _FallbackColorG;
+                float4 _FallbackColorB;
+                float4 _FallbackColorA;
+                float4 _FallbackAnimData;
                 int _BoneCount;
             CBUFFER_END
 
@@ -88,6 +98,51 @@ Shader "ComputeCrowd/CrowdRender"
                 }
 
                 return _ClipMeta2;
+            }
+
+            float4 GetAnimData()
+            {
+                #if defined(UNITY_INSTANCING_ENABLED)
+                    return UNITY_ACCESS_INSTANCED_PROP(PerInstance, _AnimData);
+                #else
+                    return _FallbackAnimData;
+                #endif
+            }
+
+            half3 GetColorR()
+            {
+                #if defined(UNITY_INSTANCING_ENABLED)
+                    return UNITY_ACCESS_INSTANCED_PROP(PerInstance, _ColorR).rgb;
+                #else
+                    return _FallbackColorR.rgb;
+                #endif
+            }
+
+            half3 GetColorG()
+            {
+                #if defined(UNITY_INSTANCING_ENABLED)
+                    return UNITY_ACCESS_INSTANCED_PROP(PerInstance, _ColorG).rgb;
+                #else
+                    return _FallbackColorG.rgb;
+                #endif
+            }
+
+            half3 GetColorB()
+            {
+                #if defined(UNITY_INSTANCING_ENABLED)
+                    return UNITY_ACCESS_INSTANCED_PROP(PerInstance, _ColorB).rgb;
+                #else
+                    return _FallbackColorB.rgb;
+                #endif
+            }
+
+            half3 GetColorA()
+            {
+                #if defined(UNITY_INSTANCING_ENABLED)
+                    return UNITY_ACCESS_INSTANCED_PROP(PerInstance, _ColorA).rgb;
+                #else
+                    return _FallbackColorA.rgb;
+                #endif
             }
 
             float4 SamplePoseTexel(int bonePixel, int poseRow)
@@ -154,7 +209,7 @@ Shader "ComputeCrowd/CrowdRender"
                 UNITY_SETUP_INSTANCE_ID(input);
                 UNITY_TRANSFER_INSTANCE_ID(input, output);
 
-                float4 animData = UNITY_ACCESS_INSTANCED_PROP(PerInstance, _AnimData);
+                float4 animData = GetAnimData();
                 output.renderMode = animData.z;
                 float debugMode = animData.w;
 
@@ -189,17 +244,17 @@ Shader "ComputeCrowd/CrowdRender"
 
             half3 ResolveOutfitColor(float4 mask)
             {
-                half3 colorR = UNITY_ACCESS_INSTANCED_PROP(PerInstance, _ColorR).rgb;
-                half3 colorG = UNITY_ACCESS_INSTANCED_PROP(PerInstance, _ColorG).rgb;
-                half3 colorB = UNITY_ACCESS_INSTANCED_PROP(PerInstance, _ColorB).rgb;
-                half3 colorA = UNITY_ACCESS_INSTANCED_PROP(PerInstance, _ColorA).rgb;
+                half3 colorR = GetColorR();
+                half3 colorG = GetColorG();
+                half3 colorB = GetColorB();
+                half3 colorA = GetColorA();
                 return colorR * mask.r + colorG * mask.g + colorB * mask.b + colorA * mask.a;
             }
 
             half4 frag(Varyings input) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(input);
-                float debugMode = UNITY_ACCESS_INSTANCED_PROP(PerInstance, _AnimData).w;
+                float debugMode = GetAnimData().w;
 
                 if (debugMode > 2.5 && debugMode < 3.5)
                 {

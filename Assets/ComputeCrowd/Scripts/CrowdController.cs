@@ -23,6 +23,11 @@ public class CrowdController : MonoBehaviour
     private static readonly int ColorBId = Shader.PropertyToID("_ColorB");
     private static readonly int ColorAId = Shader.PropertyToID("_ColorA");
     private static readonly int AnimDataId = Shader.PropertyToID("_AnimData");
+    private static readonly int FallbackColorRId = Shader.PropertyToID("_FallbackColorR");
+    private static readonly int FallbackColorGId = Shader.PropertyToID("_FallbackColorG");
+    private static readonly int FallbackColorBId = Shader.PropertyToID("_FallbackColorB");
+    private static readonly int FallbackColorAId = Shader.PropertyToID("_FallbackColorA");
+    private static readonly int FallbackAnimDataId = Shader.PropertyToID("_FallbackAnimData");
 
     [Serializable]
     private struct OutfitPreset
@@ -93,6 +98,7 @@ public class CrowdController : MonoBehaviour
     [SerializeField] private Texture2D outfitDataMap;
     [SerializeField] private Material materialTemplate;
     [SerializeField] private Material debugBillboardMaterialTemplate;
+    [SerializeField] private bool useDebugBillboardMaterialInWebGL;
     [SerializeField] private bool hideSourceCharacter = true;
     [SerializeField] private Vector3 modelRotationEuler = new(-90f, 0f, 0f);
 
@@ -1090,6 +1096,7 @@ public class CrowdController : MonoBehaviour
         bool useDebugMaterial =
             Application.platform == RuntimePlatform.WebGLPlayer &&
             UseNonInstancedWebGLFallback() &&
+            useDebugBillboardMaterialInWebGL &&
             debugBillboardMaterials != null &&
             debugBillboardMaterials.Length > 0;
 
@@ -1270,6 +1277,11 @@ public class CrowdController : MonoBehaviour
         materialPropertyBlock.SetVector(ColorBId, outfit.colorB);
         materialPropertyBlock.SetVector(ColorAId, outfit.colorA);
         materialPropertyBlock.SetVector(AnimDataId, animData);
+        materialPropertyBlock.SetVector(FallbackColorRId, outfit.colorR);
+        materialPropertyBlock.SetVector(FallbackColorGId, outfit.colorG);
+        materialPropertyBlock.SetVector(FallbackColorBId, outfit.colorB);
+        materialPropertyBlock.SetVector(FallbackColorAId, outfit.colorA);
+        materialPropertyBlock.SetVector(FallbackAnimDataId, animData);
 
         Graphics.DrawMesh(
             drawMesh,
