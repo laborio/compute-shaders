@@ -263,6 +263,7 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
                 builder.AppendLine($"controller[{i}].triangles: {controller.LastTriangleCount}");
                 builder.AppendLine($"controller[{i}].hasBillboardMesh: {controller.HasBillboardMesh}");
                 builder.AppendLine($"controller[{i}].billboardMaterials: {controller.BillboardMaterialCount}");
+                builder.AppendLine($"controller[{i}].usesDedicatedBillboardShader: {controller.UsesDedicatedBillboardShader}");
                 builder.AppendLine($"controller[{i}].debugBillboardMaterials: {controller.DebugBillboardMaterialCount}");
                 builder.AppendLine($"controller[{i}].hasPoseTexture: {controller.HasPoseTexture}");
                 builder.AppendLine($"controller[{i}].runtimeBoneCount: {controller.RuntimeBoneCount}");

@@ -97,6 +97,7 @@ public class CrowdController : MonoBehaviour
     [SerializeField] private Texture2D billboardColor02;
     [SerializeField] private Texture2D outfitDataMap;
     [SerializeField] private Material materialTemplate;
+    [SerializeField] private Material billboardMaterialTemplate;
     [SerializeField] private Material debugBillboardMaterialTemplate;
     [SerializeField] private bool useDebugBillboardMaterialInWebGL;
     [SerializeField] private bool hideSourceCharacter = true;
@@ -200,6 +201,7 @@ public class CrowdController : MonoBehaviour
     public bool HasBillboardMesh => billboardMesh != null;
     public int BillboardMaterialCount => billboardMaterials?.Length ?? 0;
     public int DebugBillboardMaterialCount => debugBillboardMaterials?.Length ?? 0;
+    public bool UsesDedicatedBillboardShader => UsesDedicatedBillboardMaterial();
     public bool HasPoseTexture => poseTexture != null;
     public int RuntimeBoneCount => crowdMesh != null ? crowdMesh.bindposes.Length : 0;
     public bool RuntimeMaterialInstancingEnabled => runtimeMaterial != null && runtimeMaterial.enableInstancing;
@@ -858,6 +860,7 @@ public class CrowdController : MonoBehaviour
     private void DrawBillboardChunk(Chunk chunk, Mesh drawMesh)
     {
         Vector3 cameraPosition = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
+        bool useDedicatedBillboardMaterial = UsesDedicatedBillboardMaterial();
         for (int variantIndex = 0; variantIndex < billboardMaterials.Length; variantIndex++)
         {
             Material variantMaterial = ResolveBillboardMaterial(variantIndex);
@@ -876,31 +879,35 @@ public class CrowdController : MonoBehaviour
                     continue;
                 }
 
-                OutfitPreset outfit = outfits[Mathf.Clamp(state.outfitIndex, 0, outfits.Length - 1)];
-                RuntimeClip runtimeClip = GetRuntimeClip(state.playbackState);
                 matrixBatch[countInBatch] = CreateBillboardMatrix(state, cameraPosition);
-                colorRBatch[countInBatch] = outfit.colorR;
-                colorGBatch[countInBatch] = outfit.colorG;
-                colorBBatch[countInBatch] = outfit.colorB;
-                colorABatch[countInBatch] = outfit.colorA;
-                animDataBatch[countInBatch] = new Vector4(
-                    (float)runtimeClip,
-                    state.clipTime,
-                    ResolveRenderModeFlag(true),
-                    ResolveDebugModeFlag());
+                if (!useDedicatedBillboardMaterial)
+                {
+                    OutfitPreset outfit = outfits[Mathf.Clamp(state.outfitIndex, 0, outfits.Length - 1)];
+                    RuntimeClip runtimeClip = GetRuntimeClip(state.playbackState);
+                    colorRBatch[countInBatch] = outfit.colorR;
+                    colorGBatch[countInBatch] = outfit.colorG;
+                    colorBBatch[countInBatch] = outfit.colorB;
+                    colorABatch[countInBatch] = outfit.colorA;
+                    animDataBatch[countInBatch] = new Vector4(
+                        (float)runtimeClip,
+                        state.clipTime,
+                        ResolveRenderModeFlag(true),
+                        ResolveDebugModeFlag());
+                }
+
                 frameVisibleInstanceCount++;
                 countInBatch++;
 
                 if (countInBatch == maxInstancesPerBatch)
                 {
-                    FlushBatch(drawMesh, variantMaterial, countInBatch);
+                    FlushBillboardBatch(drawMesh, variantMaterial, countInBatch, useDedicatedBillboardMaterial);
                     countInBatch = 0;
                 }
             }
 
             if (countInBatch > 0)
             {
-                FlushBatch(drawMesh, variantMaterial, countInBatch);
+                FlushBillboardBatch(drawMesh, variantMaterial, countInBatch, useDedicatedBillboardMaterial);
             }
         }
     }
@@ -921,6 +928,15 @@ public class CrowdController : MonoBehaviour
             Material variantMaterial = ResolveBillboardMaterial(variantIndex);
             if (variantMaterial == null)
             {
+                continue;
+            }
+
+            if (UsesDedicatedBillboardMaterial())
+            {
+                DrawSingleBillboardInstance(
+                    drawMesh,
+                    variantMaterial,
+                    CreateBillboardMatrix(state, cameraPosition));
                 continue;
             }
 
@@ -1020,10 +1036,16 @@ public class CrowdController : MonoBehaviour
         };
     }
 
+    private bool UsesDedicatedBillboardMaterial()
+    {
+        return billboardMaterialTemplate != null && billboardMaterialTemplate.shader != null;
+    }
+
     private Material[] BuildBillboardMaterials()
     {
         List<Material> materials = new();
         Texture2D[] variants = { billboardColor01, billboardColor02 };
+        bool useDedicatedBillboardMaterial = UsesDedicatedBillboardMaterial();
         for (int variantIndex = 0; variantIndex < variants.Length; variantIndex++)
         {
             Texture2D variant = variants[variantIndex];
@@ -1032,21 +1054,38 @@ public class CrowdController : MonoBehaviour
                 continue;
             }
 
-            Material material = materialTemplate != null
-                ? new Material(materialTemplate)
-                : new Material(Shader.Find("ComputeCrowd/CrowdRender"));
+            Material material;
+            if (useDedicatedBillboardMaterial)
+            {
+                material = new Material(billboardMaterialTemplate);
+            }
+            else
+            {
+                material = materialTemplate != null
+                    ? new Material(materialTemplate)
+                    : new Material(Shader.Find("ComputeCrowd/CrowdRender"));
+            }
+
             if (material.shader == null)
             {
                 continue;
             }
 
             material.enableInstancing = true;
-            material.SetTexture(BillboardMapId, variant);
-            material.SetTexture(PoseTextureId, poseTexture);
-            material.SetInt(BoneCountId, 1);
-            material.SetVector(ClipMeta0Id, Vector4.zero);
-            material.SetVector(ClipMeta1Id, Vector4.zero);
-            material.SetVector(ClipMeta2Id, Vector4.zero);
+            if (useDedicatedBillboardMaterial)
+            {
+                material.SetTexture(BaseMapId, variant);
+            }
+            else
+            {
+                material.SetTexture(BillboardMapId, variant);
+                material.SetTexture(PoseTextureId, poseTexture);
+                material.SetInt(BoneCountId, 1);
+                material.SetVector(ClipMeta0Id, Vector4.zero);
+                material.SetVector(ClipMeta1Id, Vector4.zero);
+                material.SetVector(ClipMeta2Id, Vector4.zero);
+            }
+
             materials.Add(material);
         }
 
@@ -1259,6 +1298,37 @@ public class CrowdController : MonoBehaviour
             gameObject.layer);
     }
 
+    private void FlushBillboardBatch(Mesh drawMesh, Material material, int count, bool useDedicatedBillboardMaterial)
+    {
+        if (!useDedicatedBillboardMaterial)
+        {
+            FlushBatch(drawMesh, material, count);
+            return;
+        }
+
+        if (drawMesh == null || material == null || count <= 0 || matrixBatch == null)
+        {
+            return;
+        }
+
+        frameDrawCallCount++;
+        frameSetPassCount++;
+        frameTriangleCount += GetTriangleCount(drawMesh) * (long)count;
+
+        materialPropertyBlock.Clear();
+
+        Graphics.DrawMeshInstanced(
+            drawMesh,
+            0,
+            material,
+            matrixBatch,
+            count,
+            materialPropertyBlock,
+            ShadowCastingMode.Off,
+            false,
+            gameObject.layer);
+    }
+
     private void DrawSingleInstance(Mesh drawMesh, Material material, Matrix4x4 matrix, OutfitPreset outfit, Vector4 animData)
     {
         if (drawMesh == null || material == null || materialPropertyBlock == null)
@@ -1282,6 +1352,32 @@ public class CrowdController : MonoBehaviour
         materialPropertyBlock.SetVector(FallbackColorBId, outfit.colorB);
         materialPropertyBlock.SetVector(FallbackColorAId, outfit.colorA);
         materialPropertyBlock.SetVector(FallbackAnimDataId, animData);
+
+        Graphics.DrawMesh(
+            drawMesh,
+            matrix,
+            material,
+            gameObject.layer,
+            null,
+            0,
+            materialPropertyBlock,
+            ShadowCastingMode.Off,
+            false);
+    }
+
+    private void DrawSingleBillboardInstance(Mesh drawMesh, Material material, Matrix4x4 matrix)
+    {
+        if (drawMesh == null || material == null || materialPropertyBlock == null)
+        {
+            return;
+        }
+
+        frameDrawCallCount++;
+        frameSetPassCount++;
+        frameVisibleInstanceCount++;
+        frameTriangleCount += GetTriangleCount(drawMesh);
+
+        materialPropertyBlock.Clear();
 
         Graphics.DrawMesh(
             drawMesh,
