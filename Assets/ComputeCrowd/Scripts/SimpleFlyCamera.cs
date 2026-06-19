@@ -127,6 +127,7 @@ public class SimpleFlyCamera : MonoBehaviour
             KeyCode.Z => Key.Z,
             KeyCode.W => Key.W,
             KeyCode.Q => Key.Q,
+            KeyCode.E => Key.E,
             KeyCode.A => Key.A,
             KeyCode.S => Key.S,
             KeyCode.D => Key.D,

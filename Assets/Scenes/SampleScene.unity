@@ -988,13 +988,13 @@ MonoBehaviour:
   rowSpacingZ: 1
   rowJitterX: 0.18
   rowJitterY: 0.06
-  lod1Distance: 8
-  lod2Distance: 12
-  billboardDistance: 20
+  lod1Distance: 10
+  lod2Distance: 25
+  billboardDistance: 30
   useWebGLLodDistanceOverrides: 1
-  webGLLod1Distance: 7
-  webGLLod2Distance: 10
-  webGLBillboardDistance: 13
+  webGLLod1Distance: 10
+  webGLLod2Distance: 30
+  webGLBillboardDistance: 50
   billboardScale: 0.92
   randomSeed: 7
   standingHoldRange: {x: 10, y: 20}
@@ -1225,8 +1225,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 330585543}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.1933348, y: 0.0007393069, z: -0.00014568241, w: 0.98113257}
-  m_LocalPosition: {x: -1.8507311, y: 9.165992, z: 8.181346}
+  m_LocalRotation: {x: 0.3687904, y: 0.0022836188, z: -0.0009060444, w: 0.92950934}
+  m_LocalPosition: {x: 0.37032008, y: 31.641527, z: -7.4662576}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1591,7 +1591,7 @@ Light:
   m_CullingMask:
     serializedVersion: 2
     m_Bits: 4294967295
-  m_RenderingLayerMask: 1
+  m_RenderingLayerMask: 3
   m_Lightmapping: 4
   m_LightShadowCasterMode: 0
   m_AreaSize: {x: 1, y: 1}
@@ -1638,7 +1638,7 @@ MonoBehaviour:
   m_UsePipelineSettings: 1
   m_AdditionalLightsShadowResolutionTier: 2
   m_LightLayerMask: 1
-  m_RenderingLayers: 1
+  m_RenderingLayers: 3
   m_CustomShadowLayers: 0
   m_ShadowLayerMask: 1
   m_ShadowRenderingLayers: 1
@@ -4968,13 +4968,13 @@ MonoBehaviour:
   rowSpacingZ: 1
   rowJitterX: 0.18
   rowJitterY: 0.06
-  lod1Distance: 8
-  lod2Distance: 12
-  billboardDistance: 20
+  lod1Distance: 10
+  lod2Distance: 25
+  billboardDistance: 30
   useWebGLLodDistanceOverrides: 1
-  webGLLod1Distance: 7
-  webGLLod2Distance: 10
-  webGLBillboardDistance: 13
+  webGLLod1Distance: 10
+  webGLLod2Distance: 30
+  webGLBillboardDistance: 50
   billboardScale: 0.92
   randomSeed: 7
   standingHoldRange: {x: 10, y: 20}
@@ -5453,7 +5453,7 @@ MeshRenderer:
   m_RayTracingAccelStructBuildFlagsOverride: 0
   m_RayTracingAccelStructBuildFlags: 1
   m_SmallMeshCulling: 1
-  m_RenderingLayerMask: 1
+  m_RenderingLayerMask: 2
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 57e0d4a98a214dce8c3e6b07dc75fb43, type: 2}
