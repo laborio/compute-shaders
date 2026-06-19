@@ -993,8 +993,8 @@ MonoBehaviour:
   billboardDistance: 30
   useWebGLLodDistanceOverrides: 1
   webGLLod1Distance: 10
-  webGLLod2Distance: 30
-  webGLBillboardDistance: 50
+  webGLLod2Distance: 25
+  webGLBillboardDistance: 30
   billboardScale: 0.92
   randomSeed: 7
   standingHoldRange: {x: 10, y: 20}
@@ -4973,8 +4973,8 @@ MonoBehaviour:
   billboardDistance: 30
   useWebGLLodDistanceOverrides: 1
   webGLLod1Distance: 10
-  webGLLod2Distance: 30
-  webGLBillboardDistance: 50
+  webGLLod2Distance: 25
+  webGLBillboardDistance: 30
   billboardScale: 0.92
   randomSeed: 7
   standingHoldRange: {x: 10, y: 20}
