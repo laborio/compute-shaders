@@ -72,7 +72,7 @@ Shader "ComputeCrowd/CrowdRender"
                 float3 normalOS : NORMAL;
                 float2 uv : TEXCOORD0;
                 float4 weights : BLENDWEIGHTS;
-                uint4 indices : BLENDINDICES;
+                float4 indices : BLENDINDICES;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -182,23 +182,34 @@ Shader "ComputeCrowd/CrowdRender"
                 return lerp(matrix0, matrix1, interpolation);
             }
 
-            float3 SkinPosition(float4 positionOS, float4 weights, uint4 indices, float4 animData)
+            int4 ResolveBoneIndices(float4 indices)
             {
+                return int4(
+                    (int)floor(indices.x + 0.5),
+                    (int)floor(indices.y + 0.5),
+                    (int)floor(indices.z + 0.5),
+                    (int)floor(indices.w + 0.5));
+            }
+
+            float3 SkinPosition(float4 positionOS, float4 weights, float4 indices, float4 animData)
+            {
+                int4 boneIndices = ResolveBoneIndices(indices);
                 float3 skinned = 0;
-                skinned += mul(SampleAnimatedBone(indices.x, animData), positionOS) * weights.x;
-                skinned += mul(SampleAnimatedBone(indices.y, animData), positionOS) * weights.y;
-                skinned += mul(SampleAnimatedBone(indices.z, animData), positionOS) * weights.z;
-                skinned += mul(SampleAnimatedBone(indices.w, animData), positionOS) * weights.w;
+                skinned += mul(SampleAnimatedBone(boneIndices.x, animData), positionOS) * weights.x;
+                skinned += mul(SampleAnimatedBone(boneIndices.y, animData), positionOS) * weights.y;
+                skinned += mul(SampleAnimatedBone(boneIndices.z, animData), positionOS) * weights.z;
+                skinned += mul(SampleAnimatedBone(boneIndices.w, animData), positionOS) * weights.w;
                 return skinned;
             }
 
-            float3 SkinNormal(float3 normalOS, float4 weights, uint4 indices, float4 animData)
+            float3 SkinNormal(float3 normalOS, float4 weights, float4 indices, float4 animData)
             {
+                int4 boneIndices = ResolveBoneIndices(indices);
                 float3 skinned =
-                    mul((float3x3)SampleAnimatedBone(indices.x, animData), normalOS) * weights.x +
-                    mul((float3x3)SampleAnimatedBone(indices.y, animData), normalOS) * weights.y +
-                    mul((float3x3)SampleAnimatedBone(indices.z, animData), normalOS) * weights.z +
-                    mul((float3x3)SampleAnimatedBone(indices.w, animData), normalOS) * weights.w;
+                    mul((float3x3)SampleAnimatedBone(boneIndices.x, animData), normalOS) * weights.x +
+                    mul((float3x3)SampleAnimatedBone(boneIndices.y, animData), normalOS) * weights.y +
+                    mul((float3x3)SampleAnimatedBone(boneIndices.z, animData), normalOS) * weights.z +
+                    mul((float3x3)SampleAnimatedBone(boneIndices.w, animData), normalOS) * weights.w;
 
                 return normalize(skinned);
             }
