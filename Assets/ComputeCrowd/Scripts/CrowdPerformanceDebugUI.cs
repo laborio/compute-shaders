@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using TMPro;
@@ -30,6 +31,8 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
     [Header("Camera Cycle")]
     [SerializeField] private bool showCameraCycleButton = true;
     [SerializeField] private float cameraMoveDuration = 1.25f;
+    [SerializeField] private bool prewarmCameraCycleOnStart = true;
+    [SerializeField] private float cameraWarmupDelay = 0.2f;
     [SerializeField] private CameraWaypoint[] presetCameraWaypoints =
     {
         new()
@@ -64,6 +67,7 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
     private CameraWaypoint cameraMoveTarget;
     private float cameraMoveTimer;
     private int nextCameraStopIndex;
+    private bool hasQueuedWarmup;
 
     private void OnEnable()
     {
@@ -72,11 +76,13 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
         refreshTimer = 0f;
         BindCameraTarget();
         Application.logMessageReceived += HandleLogMessage;
+        QueueCameraWarmup();
         Refresh();
     }
 
     private void OnDisable()
     {
+        StopAllCoroutines();
         Application.logMessageReceived -= HandleLogMessage;
         if (targetFlyCamera != null && restoreFlyCameraAfterMove)
         {
@@ -85,6 +91,7 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
 
         isCameraMoving = false;
         restoreFlyCameraAfterMove = false;
+        hasQueuedWarmup = false;
     }
 
     private void Update()
@@ -507,5 +514,84 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
             position = targetTransform.position,
             rotation = targetTransform.rotation,
         };
+    }
+
+    private void QueueCameraWarmup()
+    {
+        if (!prewarmCameraCycleOnStart || hasQueuedWarmup)
+        {
+            return;
+        }
+
+        hasQueuedWarmup = true;
+        StartCoroutine(WarmupCameraPath());
+    }
+
+    private IEnumerator WarmupCameraPath()
+    {
+        if (cameraWarmupDelay > 0f)
+        {
+            yield return new WaitForSecondsRealtime(cameraWarmupDelay);
+        }
+        else
+        {
+            yield return null;
+        }
+
+        if (targetCameraTransform == null)
+        {
+            BindCameraTarget();
+            if (targetCameraTransform == null)
+            {
+                yield break;
+            }
+        }
+
+        Camera mainCamera = targetCameraTransform.GetComponent<Camera>();
+        if (mainCamera == null)
+        {
+            yield break;
+        }
+
+        GameObject warmupCameraObject = new("CameraWarmup");
+        warmupCameraObject.hideFlags = HideFlags.HideAndDontSave;
+
+        Camera warmupCamera = warmupCameraObject.AddComponent<Camera>();
+        warmupCamera.CopyFrom(mainCamera);
+        warmupCamera.enabled = false;
+        warmupCamera.depth = mainCamera.depth - 1f;
+        warmupCamera.cullingMask = mainCamera.cullingMask;
+        warmupCamera.clearFlags = CameraClearFlags.SolidColor;
+        warmupCamera.backgroundColor = Color.black;
+
+        RenderTexture warmupTexture = RenderTexture.GetTemporary(32, 32, 16, RenderTextureFormat.ARGB32);
+        warmupTexture.hideFlags = HideFlags.HideAndDontSave;
+        warmupCamera.targetTexture = warmupTexture;
+
+        CameraWaypoint[] warmupWaypoints = BuildWarmupWaypointSequence();
+        for (int i = 0; i < warmupWaypoints.Length; i++)
+        {
+            warmupCamera.transform.SetPositionAndRotation(warmupWaypoints[i].position, warmupWaypoints[i].rotation);
+            warmupCamera.Render();
+            yield return null;
+        }
+
+        warmupCamera.targetTexture = null;
+        RenderTexture.ReleaseTemporary(warmupTexture);
+        Destroy(warmupCameraObject);
+    }
+
+    private CameraWaypoint[] BuildWarmupWaypointSequence()
+    {
+        int presetCount = presetCameraWaypoints?.Length ?? 0;
+        CameraWaypoint[] warmupWaypoints = new CameraWaypoint[presetCount + 1];
+        warmupWaypoints[0] = originalCameraWaypoint;
+
+        for (int i = 0; i < presetCount; i++)
+        {
+            warmupWaypoints[i + 1] = presetCameraWaypoints[i];
+        }
+
+        return warmupWaypoints;
     }
 }
