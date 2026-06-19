@@ -1313,7 +1313,7 @@ public class CrowdController : MonoBehaviour
 
         bool useDedicatedWebGLMeshFallbackMaterial =
             Application.platform == RuntimePlatform.WebGLPlayer &&
-            useWebGLSolidMeshFallback &&
+            useWebGLUnskinnedMeshFallback &&
             UsesDedicatedWebGLMeshFallbackMaterial;
 
         Material drawMaterial = useDedicatedWebGLMeshFallbackMaterial
@@ -1321,7 +1321,16 @@ public class CrowdController : MonoBehaviour
             : material;
 
         materialPropertyBlock.Clear();
-        if (!useDedicatedWebGLMeshFallbackMaterial)
+        if (useDedicatedWebGLMeshFallbackMaterial)
+        {
+            materialPropertyBlock.SetTexture(BaseMapId, atlasMap);
+            materialPropertyBlock.SetTexture(OutfitDataMapId, outfitDataMap);
+            materialPropertyBlock.SetVector(ColorRId, outfit.colorR);
+            materialPropertyBlock.SetVector(ColorGId, outfit.colorG);
+            materialPropertyBlock.SetVector(ColorBId, outfit.colorB);
+            materialPropertyBlock.SetVector(ColorAId, outfit.colorA);
+        }
+        else
         {
             materialPropertyBlock.SetVector(ColorRId, outfit.colorR);
             materialPropertyBlock.SetVector(ColorGId, outfit.colorG);
@@ -1342,7 +1351,7 @@ public class CrowdController : MonoBehaviour
             gameObject.layer,
             null,
             0,
-            useDedicatedWebGLMeshFallbackMaterial ? null : materialPropertyBlock,
+            materialPropertyBlock,
             ShadowCastingMode.Off,
             false);
     }

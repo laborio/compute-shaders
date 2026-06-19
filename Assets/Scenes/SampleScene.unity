@@ -974,7 +974,7 @@ MonoBehaviour:
   outfitDataMap: {fileID: 2800000, guid: 558416a6f918c4f2a95173ed680ec77f, type: 3}
   materialTemplate: {fileID: 2100000, guid: c1b01ad6e8a2149e8b743cc06fbbadb4, type: 2}
   billboardMaterialTemplate: {fileID: 2100000, guid: e41be07ebc864591b5371a9de4f6fa20, type: 2}
-  webGLMeshFallbackMaterialTemplate: {fileID: 2100000, guid: c193f0f7e80543ab82c1d4efff655441, type: 2}
+  webGLMeshFallbackMaterialTemplate: {fileID: 2100000, guid: 7623deeff7bc458fa2d90d0988bf682d, type: 2}
   hideSourceCharacter: 0
   modelRotationEuler: {x: -90, y: 0, z: 0}
   instanceCount: 3000
@@ -4953,7 +4953,7 @@ MonoBehaviour:
   outfitDataMap: {fileID: 2800000, guid: 558416a6f918c4f2a95173ed680ec77f, type: 3}
   materialTemplate: {fileID: 2100000, guid: c1b01ad6e8a2149e8b743cc06fbbadb4, type: 2}
   billboardMaterialTemplate: {fileID: 2100000, guid: e41be07ebc864591b5371a9de4f6fa20, type: 2}
-  webGLMeshFallbackMaterialTemplate: {fileID: 2100000, guid: c193f0f7e80543ab82c1d4efff655441, type: 2}
+  webGLMeshFallbackMaterialTemplate: {fileID: 2100000, guid: 7623deeff7bc458fa2d90d0988bf682d, type: 2}
   hideSourceCharacter: 0
   modelRotationEuler: {x: -90, y: 0, z: 0}
   instanceCount: 1000
