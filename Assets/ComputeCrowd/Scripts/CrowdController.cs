@@ -153,6 +153,7 @@ public class CrowdController : MonoBehaviour
     [Header("Debug")]
     [SerializeField] private bool drawChunkGizmos = true;
     [SerializeField] private DebugRenderMode debugRenderMode = DebugRenderMode.Normal;
+    [SerializeField] private bool forceWebGLBillboardsOnly;
     [SerializeField] private bool useWebGLBillboardFallback = true;
     [SerializeField] private bool useWebGLNonInstancedMeshFallback = true;
     [SerializeField] private bool useWebGLUnskinnedMeshFallback = true;
@@ -207,6 +208,8 @@ public class CrowdController : MonoBehaviour
     public bool IsWebGLBillboardFallbackActive =>
         debugRenderMode == DebugRenderMode.Normal &&
         ResolveActiveDebugRenderMode() == DebugRenderMode.BillboardsOnly;
+    public bool IsWebGLBillboardOnlyShowcaseEnabled =>
+        Application.platform == RuntimePlatform.WebGLPlayer && forceWebGLBillboardsOnly;
     public bool IsWebGLNonInstancedMeshFallbackActive =>
         Application.platform == RuntimePlatform.WebGLPlayer && useWebGLNonInstancedMeshFallback;
     public bool IsWebGLUnskinnedMeshFallbackActive =>
@@ -215,6 +218,11 @@ public class CrowdController : MonoBehaviour
         Application.platform == RuntimePlatform.WebGLPlayer && useWebGLSolidMeshFallback;
     public bool UsesDedicatedWebGLMeshFallbackMaterial =>
         webGLMeshFallbackMaterialTemplate != null && webGLMeshFallbackMaterialTemplate.shader != null;
+    public string WebGLMeshFallbackShaderName =>
+        webGLMeshFallbackMaterialTemplate != null &&
+        webGLMeshFallbackMaterialTemplate.shader != null
+            ? webGLMeshFallbackMaterialTemplate.shader.name
+            : "<none>";
     public bool HasBillboardMesh => billboardMesh != null;
     public int BillboardMaterialCount => billboardMaterials?.Length ?? 0;
     public bool UsesDedicatedBillboardShader => UsesDedicatedBillboardMaterial();
@@ -1122,6 +1130,11 @@ public class CrowdController : MonoBehaviour
         if (debugRenderMode != DebugRenderMode.Normal)
         {
             return debugRenderMode;
+        }
+
+        if (Application.platform == RuntimePlatform.WebGLPlayer && forceWebGLBillboardsOnly)
+        {
+            return DebugRenderMode.BillboardsOnly;
         }
 
         bool webGlFallbackAvailable =
