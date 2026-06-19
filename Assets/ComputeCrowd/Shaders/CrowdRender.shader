@@ -66,13 +66,19 @@ Shader "ComputeCrowd/CrowdRender"
                 UNITY_DEFINE_INSTANCED_PROP(float4, _AnimData)
             UNITY_INSTANCING_BUFFER_END(PerInstance)
 
+            #if defined(SHADER_API_GLES3)
+                #define CROWD_BLENDINDICES_TYPE float4
+            #else
+                #define CROWD_BLENDINDICES_TYPE uint4
+            #endif
+
             struct Attributes
             {
                 float4 positionOS : POSITION;
                 float3 normalOS : NORMAL;
                 float2 uv : TEXCOORD0;
                 float4 weights : BLENDWEIGHTS;
-                float4 indices : BLENDINDICES;
+                CROWD_BLENDINDICES_TYPE indices : BLENDINDICES;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -191,7 +197,12 @@ Shader "ComputeCrowd/CrowdRender"
                     (int)floor(indices.w + 0.5));
             }
 
-            float3 SkinPosition(float4 positionOS, float4 weights, float4 indices, float4 animData)
+            int4 ResolveBoneIndices(uint4 indices)
+            {
+                return int4(indices);
+            }
+
+            float3 SkinPosition(float4 positionOS, float4 weights, CROWD_BLENDINDICES_TYPE indices, float4 animData)
             {
                 int4 boneIndices = ResolveBoneIndices(indices);
                 float3 skinned = 0;
@@ -202,7 +213,7 @@ Shader "ComputeCrowd/CrowdRender"
                 return skinned;
             }
 
-            float3 SkinNormal(float3 normalOS, float4 weights, float4 indices, float4 animData)
+            float3 SkinNormal(float3 normalOS, float4 weights, CROWD_BLENDINDICES_TYPE indices, float4 animData)
             {
                 int4 boneIndices = ResolveBoneIndices(indices);
                 float3 skinned =
