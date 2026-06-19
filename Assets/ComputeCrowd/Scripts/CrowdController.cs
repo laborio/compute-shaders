@@ -98,6 +98,7 @@ public class CrowdController : MonoBehaviour
     [SerializeField] private Texture2D outfitDataMap;
     [SerializeField] private Material materialTemplate;
     [SerializeField] private Material billboardMaterialTemplate;
+    [SerializeField] private Material webGLMeshFallbackMaterialTemplate;
     [SerializeField] private bool hideSourceCharacter = true;
     [SerializeField] private Vector3 modelRotationEuler = new(-90f, 0f, 0f);
 
@@ -212,6 +213,8 @@ public class CrowdController : MonoBehaviour
         Application.platform == RuntimePlatform.WebGLPlayer && useWebGLUnskinnedMeshFallback;
     public bool IsWebGLSolidMeshFallbackActive =>
         Application.platform == RuntimePlatform.WebGLPlayer && useWebGLSolidMeshFallback;
+    public bool UsesDedicatedWebGLMeshFallbackMaterial =>
+        webGLMeshFallbackMaterialTemplate != null && webGLMeshFallbackMaterialTemplate.shader != null;
     public bool HasBillboardMesh => billboardMesh != null;
     public int BillboardMaterialCount => billboardMaterials?.Length ?? 0;
     public bool UsesDedicatedBillboardShader => UsesDedicatedBillboardMaterial();
@@ -1308,26 +1311,38 @@ public class CrowdController : MonoBehaviour
                 : (float)DebugRenderMode.UnskinnedLit;
         }
 
+        bool useDedicatedWebGLMeshFallbackMaterial =
+            Application.platform == RuntimePlatform.WebGLPlayer &&
+            useWebGLSolidMeshFallback &&
+            UsesDedicatedWebGLMeshFallbackMaterial;
+
+        Material drawMaterial = useDedicatedWebGLMeshFallbackMaterial
+            ? webGLMeshFallbackMaterialTemplate
+            : material;
+
         materialPropertyBlock.Clear();
-        materialPropertyBlock.SetVector(ColorRId, outfit.colorR);
-        materialPropertyBlock.SetVector(ColorGId, outfit.colorG);
-        materialPropertyBlock.SetVector(ColorBId, outfit.colorB);
-        materialPropertyBlock.SetVector(ColorAId, outfit.colorA);
-        materialPropertyBlock.SetVector(AnimDataId, effectiveAnimData);
-        materialPropertyBlock.SetVector(FallbackColorRId, outfit.colorR);
-        materialPropertyBlock.SetVector(FallbackColorGId, outfit.colorG);
-        materialPropertyBlock.SetVector(FallbackColorBId, outfit.colorB);
-        materialPropertyBlock.SetVector(FallbackColorAId, outfit.colorA);
-        materialPropertyBlock.SetVector(FallbackAnimDataId, effectiveAnimData);
+        if (!useDedicatedWebGLMeshFallbackMaterial)
+        {
+            materialPropertyBlock.SetVector(ColorRId, outfit.colorR);
+            materialPropertyBlock.SetVector(ColorGId, outfit.colorG);
+            materialPropertyBlock.SetVector(ColorBId, outfit.colorB);
+            materialPropertyBlock.SetVector(ColorAId, outfit.colorA);
+            materialPropertyBlock.SetVector(AnimDataId, effectiveAnimData);
+            materialPropertyBlock.SetVector(FallbackColorRId, outfit.colorR);
+            materialPropertyBlock.SetVector(FallbackColorGId, outfit.colorG);
+            materialPropertyBlock.SetVector(FallbackColorBId, outfit.colorB);
+            materialPropertyBlock.SetVector(FallbackColorAId, outfit.colorA);
+            materialPropertyBlock.SetVector(FallbackAnimDataId, effectiveAnimData);
+        }
 
         Graphics.DrawMesh(
             drawMesh,
             matrix,
-            material,
+            drawMaterial,
             gameObject.layer,
             null,
             0,
-            materialPropertyBlock,
+            useDedicatedWebGLMeshFallbackMaterial ? null : materialPropertyBlock,
             ShadowCastingMode.Off,
             false);
     }
