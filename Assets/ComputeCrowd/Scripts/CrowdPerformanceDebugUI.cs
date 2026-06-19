@@ -9,6 +9,13 @@ using UnityEngine.InputSystem;
 [DisallowMultipleComponent]
 public class CrowdPerformanceDebugUI : MonoBehaviour
 {
+    [System.Serializable]
+    private struct CameraWaypoint
+    {
+        public Vector3 position;
+        public Quaternion rotation;
+    }
+
     [SerializeField] private TMP_Text fpsText;
     [SerializeField] private TMP_Text cpuMainText;
     [SerializeField] private TMP_Text drawCallsText;
@@ -20,24 +27,50 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
     [SerializeField] private bool showWebGLDebugConsole = true;
     [SerializeField] private KeyCode toggleConsoleKey = KeyCode.BackQuote;
     [SerializeField] private int maxLogEntries = 40;
+    [Header("Camera Cycle")]
+    [SerializeField] private bool showCameraCycleButton = true;
+    [SerializeField] private float cameraMoveDuration = 1.25f;
+    [SerializeField] private CameraWaypoint[] presetCameraWaypoints =
+    {
+        new()
+        {
+            position = new Vector3(-2.2430134f, 10.928882f, 28.89514f),
+            rotation = new Quaternion(0.16715553f, -0.0012399766f, 0.00021022691f, 0.9859297f),
+        },
+        new()
+        {
+            position = new Vector3(-2.2637966f, 4.1682997f, 37.15785f),
+            rotation = new Quaternion(-0.12659314f, -0.0012475532f, -0.00015921271f, 0.99195397f),
+        },
+    };
 
     private readonly FrameTiming[] frameTimings = new FrameTiming[1];
     private readonly List<string> runtimeLogs = new();
     private CrowdController[] crowdControllers;
+    private Transform targetCameraTransform;
+    private SimpleFlyCamera targetFlyCamera;
     private float refreshTimer;
     private float smoothedDeltaTime;
     private bool isConsoleOpen;
+    private bool isCameraMoving;
+    private bool restoreFlyCameraAfterMove;
     private string cachedConsoleText = string.Empty;
     private Vector2 consoleScroll;
     private GUIStyle buttonStyle;
     private GUIStyle textAreaStyle;
     private GUIStyle labelStyle;
+    private CameraWaypoint originalCameraWaypoint;
+    private CameraWaypoint cameraMoveStart;
+    private CameraWaypoint cameraMoveTarget;
+    private float cameraMoveTimer;
+    private int nextCameraStopIndex;
 
     private void OnEnable()
     {
         crowdControllers = FindObjectsByType<CrowdController>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         smoothedDeltaTime = Mathf.Max(Time.unscaledDeltaTime, 1f / 60f);
         refreshTimer = 0f;
+        BindCameraTarget();
         Application.logMessageReceived += HandleLogMessage;
         Refresh();
     }
@@ -45,12 +78,20 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
     private void OnDisable()
     {
         Application.logMessageReceived -= HandleLogMessage;
+        if (targetFlyCamera != null && restoreFlyCameraAfterMove)
+        {
+            targetFlyCamera.enabled = true;
+        }
+
+        isCameraMoving = false;
+        restoreFlyCameraAfterMove = false;
     }
 
     private void Update()
     {
         float deltaTime = Mathf.Max(Time.unscaledDeltaTime, 0.0001f);
         smoothedDeltaTime = Mathf.Lerp(smoothedDeltaTime, deltaTime, 0.1f);
+        UpdateCameraMove(deltaTime);
 
         if (showWebGLDebugConsole && WasTogglePressed())
         {
@@ -151,7 +192,7 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
 
     private void OnGUI()
     {
-        if (!showWebGLDebugConsole)
+        if (!showWebGLDebugConsole && !showCameraCycleButton)
         {
             return;
         }
@@ -161,7 +202,7 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
         const float buttonWidth = 92f;
         const float buttonHeight = 32f;
         Rect toggleRect = new(12f, 12f, buttonWidth, buttonHeight);
-        if (GUI.Button(toggleRect, isConsoleOpen ? "Hide Debug" : "Show Debug", buttonStyle))
+        if (showWebGLDebugConsole && GUI.Button(toggleRect, isConsoleOpen ? "Hide Debug" : "Show Debug", buttonStyle))
         {
             isConsoleOpen = !isConsoleOpen;
             if (isConsoleOpen)
@@ -170,7 +211,18 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
             }
         }
 
-        if (!isConsoleOpen)
+        if (showCameraCycleButton)
+        {
+            float cameraButtonX = showWebGLDebugConsole ? toggleRect.xMax + 8f : 12f;
+            Rect cameraRect = new(cameraButtonX, 12f, 116f, buttonHeight);
+            string buttonLabel = isCameraMoving ? "Moving Cam" : "Cycle Camera";
+            if (GUI.Button(cameraRect, buttonLabel, buttonStyle))
+            {
+                BeginNextCameraMove();
+            }
+        }
+
+        if (!showWebGLDebugConsole || !isConsoleOpen)
         {
             return;
         }
@@ -359,5 +411,101 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
 #else
         return Input.GetKeyDown(toggleConsoleKey);
 #endif
+    }
+
+    private void BindCameraTarget()
+    {
+        Camera mainCamera = Camera.main;
+        if (mainCamera == null)
+        {
+            return;
+        }
+
+        targetCameraTransform = mainCamera.transform;
+        targetFlyCamera = mainCamera.GetComponent<SimpleFlyCamera>();
+        originalCameraWaypoint = CreateCameraWaypoint(targetCameraTransform);
+        nextCameraStopIndex = 0;
+    }
+
+    private void BeginNextCameraMove()
+    {
+        if (targetCameraTransform == null)
+        {
+            BindCameraTarget();
+            if (targetCameraTransform == null)
+            {
+                return;
+            }
+        }
+
+        cameraMoveStart = CreateCameraWaypoint(targetCameraTransform);
+        cameraMoveTarget = ResolveNextCameraWaypoint();
+        cameraMoveTimer = 0f;
+        isCameraMoving = true;
+
+        if (targetFlyCamera != null)
+        {
+            restoreFlyCameraAfterMove = targetFlyCamera.enabled;
+            targetFlyCamera.enabled = false;
+        }
+    }
+
+    private void UpdateCameraMove(float deltaTime)
+    {
+        if (!isCameraMoving || targetCameraTransform == null)
+        {
+            return;
+        }
+
+        cameraMoveTimer += deltaTime;
+        float duration = Mathf.Max(0.01f, cameraMoveDuration);
+        float t = Mathf.Clamp01(cameraMoveTimer / duration);
+        float easedT = Mathf.SmoothStep(0f, 1f, t);
+
+        targetCameraTransform.position = Vector3.LerpUnclamped(cameraMoveStart.position, cameraMoveTarget.position, easedT);
+        targetCameraTransform.rotation = Quaternion.Slerp(cameraMoveStart.rotation, cameraMoveTarget.rotation, easedT);
+
+        if (t < 1f)
+        {
+            return;
+        }
+
+        targetCameraTransform.position = cameraMoveTarget.position;
+        targetCameraTransform.rotation = cameraMoveTarget.rotation;
+        isCameraMoving = false;
+
+        if (targetFlyCamera != null && restoreFlyCameraAfterMove)
+        {
+            targetFlyCamera.enabled = true;
+        }
+    }
+
+    private CameraWaypoint ResolveNextCameraWaypoint()
+    {
+        int presetCount = presetCameraWaypoints?.Length ?? 0;
+        int totalStops = presetCount + 1;
+        if (totalStops <= 0)
+        {
+            return originalCameraWaypoint;
+        }
+
+        int selectedIndex = nextCameraStopIndex;
+        nextCameraStopIndex = (nextCameraStopIndex + 1) % totalStops;
+
+        if (selectedIndex < presetCount)
+        {
+            return presetCameraWaypoints[selectedIndex];
+        }
+
+        return originalCameraWaypoint;
+    }
+
+    private static CameraWaypoint CreateCameraWaypoint(Transform targetTransform)
+    {
+        return new CameraWaypoint
+        {
+            position = targetTransform.position,
+            rotation = targetTransform.rotation,
+        };
     }
 }
