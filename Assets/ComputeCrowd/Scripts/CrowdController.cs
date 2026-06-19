@@ -155,6 +155,7 @@ public class CrowdController : MonoBehaviour
     [SerializeField] private bool useWebGLBillboardFallback = true;
     [SerializeField] private bool useWebGLNonInstancedMeshFallback = true;
     [SerializeField] private bool useWebGLUnskinnedMeshFallback = true;
+    [SerializeField] private bool useWebGLSolidMeshFallback = true;
 
     private readonly Plane[] frustumPlanes = new Plane[6];
     private readonly List<Chunk> chunks = new();
@@ -209,6 +210,8 @@ public class CrowdController : MonoBehaviour
         Application.platform == RuntimePlatform.WebGLPlayer && useWebGLNonInstancedMeshFallback;
     public bool IsWebGLUnskinnedMeshFallbackActive =>
         Application.platform == RuntimePlatform.WebGLPlayer && useWebGLUnskinnedMeshFallback;
+    public bool IsWebGLSolidMeshFallbackActive =>
+        Application.platform == RuntimePlatform.WebGLPlayer && useWebGLSolidMeshFallback;
     public bool HasBillboardMesh => billboardMesh != null;
     public int BillboardMaterialCount => billboardMaterials?.Length ?? 0;
     public bool UsesDedicatedBillboardShader => UsesDedicatedBillboardMaterial();
@@ -1300,7 +1303,9 @@ public class CrowdController : MonoBehaviour
         Vector4 effectiveAnimData = animData;
         if (Application.platform == RuntimePlatform.WebGLPlayer && useWebGLUnskinnedMeshFallback)
         {
-            effectiveAnimData.w = (float)DebugRenderMode.UnskinnedLit;
+            effectiveAnimData.w = useWebGLSolidMeshFallback
+                ? (float)DebugRenderMode.UnskinnedSolid
+                : (float)DebugRenderMode.UnskinnedLit;
         }
 
         materialPropertyBlock.Clear();

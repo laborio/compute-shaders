@@ -1012,9 +1012,10 @@ MonoBehaviour:
     billboardVariant: 1
   drawChunkGizmos: 1
   debugRenderMode: 0
-  useWebGLBillboardFallback: 1
+  useWebGLBillboardFallback: 0
   useWebGLNonInstancedMeshFallback: 1
   useWebGLUnskinnedMeshFallback: 1
+  useWebGLSolidMeshFallback: 1
 --- !u!4 &301947692
 Transform:
   m_ObjectHideFlags: 0
@@ -4989,9 +4990,10 @@ MonoBehaviour:
     billboardVariant: 1
   drawChunkGizmos: 1
   debugRenderMode: 0
-  useWebGLBillboardFallback: 1
+  useWebGLBillboardFallback: 0
   useWebGLNonInstancedMeshFallback: 1
   useWebGLUnskinnedMeshFallback: 1
+  useWebGLSolidMeshFallback: 1
 --- !u!4 &1651472323
 Transform:
   m_ObjectHideFlags: 0
