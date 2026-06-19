@@ -1016,8 +1016,8 @@ MonoBehaviour:
   forceWebGLBillboardsOnly: 0
   useWebGLBillboardFallback: 0
   useWebGLNonInstancedMeshFallback: 1
-  useWebGLUnskinnedMeshFallback: 1
-  useWebGLSolidMeshFallback: 1
+  useWebGLUnskinnedMeshFallback: 0
+  useWebGLSolidMeshFallback: 0
 --- !u!4 &301947692
 Transform:
   m_ObjectHideFlags: 0
@@ -4996,8 +4996,8 @@ MonoBehaviour:
   forceWebGLBillboardsOnly: 0
   useWebGLBillboardFallback: 0
   useWebGLNonInstancedMeshFallback: 1
-  useWebGLUnskinnedMeshFallback: 1
-  useWebGLSolidMeshFallback: 1
+  useWebGLUnskinnedMeshFallback: 0
+  useWebGLSolidMeshFallback: 0
 --- !u!4 &1651472323
 Transform:
   m_ObjectHideFlags: 0
