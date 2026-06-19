@@ -33,6 +33,7 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
     [SerializeField] private float cameraMoveDuration = 1.25f;
     [SerializeField] private bool prewarmCameraCycleOnStart = true;
     [SerializeField] private float cameraWarmupDelay = 0.2f;
+    [SerializeField] private int cameraWarmupFramesPerStop = 2;
     [SerializeField] private CameraWaypoint[] presetCameraWaypoints =
     {
         new()
@@ -68,6 +69,7 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
     private float cameraMoveTimer;
     private int nextCameraStopIndex;
     private bool hasQueuedWarmup;
+    private bool restoreFlyCameraAfterWarmup;
 
     private void OnEnable()
     {
@@ -91,6 +93,12 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
 
         isCameraMoving = false;
         restoreFlyCameraAfterMove = false;
+        if (targetFlyCamera != null && restoreFlyCameraAfterWarmup)
+        {
+            targetFlyCamera.enabled = true;
+        }
+
+        restoreFlyCameraAfterWarmup = false;
         hasQueuedWarmup = false;
     }
 
@@ -553,32 +561,40 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
             yield break;
         }
 
-        GameObject warmupCameraObject = new("CameraWarmup");
-        warmupCameraObject.hideFlags = HideFlags.HideAndDontSave;
-
-        Camera warmupCamera = warmupCameraObject.AddComponent<Camera>();
-        warmupCamera.CopyFrom(mainCamera);
-        warmupCamera.enabled = false;
-        warmupCamera.depth = mainCamera.depth - 1f;
-        warmupCamera.cullingMask = mainCamera.cullingMask;
-        warmupCamera.clearFlags = CameraClearFlags.SolidColor;
-        warmupCamera.backgroundColor = Color.black;
-
         RenderTexture warmupTexture = RenderTexture.GetTemporary(32, 32, 16, RenderTextureFormat.ARGB32);
         warmupTexture.hideFlags = HideFlags.HideAndDontSave;
-        warmupCamera.targetTexture = warmupTexture;
-
+        RenderTexture originalTargetTexture = mainCamera.targetTexture;
+        CameraWaypoint savedCameraWaypoint = CreateCameraWaypoint(targetCameraTransform);
         CameraWaypoint[] warmupWaypoints = BuildWarmupWaypointSequence();
-        for (int i = 0; i < warmupWaypoints.Length; i++)
+        int framesPerStop = Mathf.Max(1, cameraWarmupFramesPerStop);
+
+        if (targetFlyCamera != null)
         {
-            warmupCamera.transform.SetPositionAndRotation(warmupWaypoints[i].position, warmupWaypoints[i].rotation);
-            warmupCamera.Render();
-            yield return null;
+            restoreFlyCameraAfterWarmup = targetFlyCamera.enabled;
+            targetFlyCamera.enabled = false;
         }
 
-        warmupCamera.targetTexture = null;
+        mainCamera.targetTexture = warmupTexture;
+
+        for (int i = 0; i < warmupWaypoints.Length; i++)
+        {
+            targetCameraTransform.SetPositionAndRotation(warmupWaypoints[i].position, warmupWaypoints[i].rotation);
+            for (int frame = 0; frame < framesPerStop; frame++)
+            {
+                yield return new WaitForEndOfFrame();
+            }
+        }
+
+        targetCameraTransform.SetPositionAndRotation(savedCameraWaypoint.position, savedCameraWaypoint.rotation);
+        mainCamera.targetTexture = originalTargetTexture;
         RenderTexture.ReleaseTemporary(warmupTexture);
-        Destroy(warmupCameraObject);
+
+        if (targetFlyCamera != null && restoreFlyCameraAfterWarmup)
+        {
+            targetFlyCamera.enabled = true;
+        }
+
+        restoreFlyCameraAfterWarmup = false;
     }
 
     private CameraWaypoint[] BuildWarmupWaypointSequence()

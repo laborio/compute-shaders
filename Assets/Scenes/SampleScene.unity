@@ -4809,6 +4809,9 @@ MonoBehaviour:
   maxLogEntries: 40
   showCameraCycleButton: 1
   cameraMoveDuration: 1.25
+  prewarmCameraCycleOnStart: 1
+  cameraWarmupDelay: 0.2
+  cameraWarmupFramesPerStop: 2
   presetCameraWaypoints:
   - position: {x: -2.2430134, y: 10.928882, z: 28.89514}
     rotation: {x: 0.16715553, y: -0.0012399766, z: 0.0002102269, w: 0.9859297}
