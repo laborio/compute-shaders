@@ -155,6 +155,7 @@ public class CrowdController : MonoBehaviour
     [SerializeField] private bool forceWebGLBillboardsOnly;
     [SerializeField] private bool useWebGLBillboardFallback = true;
     [SerializeField] private bool useWebGLNonInstancedMeshFallback = true;
+    [SerializeField] private bool useWebGLSkipLod0 = true;
 
     private readonly Plane[] frustumPlanes = new Plane[6];
     private readonly List<Chunk> chunks = new();
@@ -209,6 +210,8 @@ public class CrowdController : MonoBehaviour
         Application.platform == RuntimePlatform.WebGLPlayer && forceWebGLBillboardsOnly;
     public bool IsWebGLNonInstancedMeshFallbackActive =>
         Application.platform == RuntimePlatform.WebGLPlayer && useWebGLNonInstancedMeshFallback;
+    public bool IsWebGLSkipLod0Active =>
+        Application.platform == RuntimePlatform.WebGLPlayer && useWebGLSkipLod0 && lodMeshes != null && lodMeshes.Length >= 2;
     public bool HasBillboardMesh => billboardMesh != null;
     public int BillboardMaterialCount => billboardMaterials?.Length ?? 0;
     public bool UsesDedicatedBillboardShader => UsesDedicatedBillboardMaterial();
@@ -930,6 +933,7 @@ public class CrowdController : MonoBehaviour
         float activeLod1Distance = ResolveLod1Distance();
         float activeLod2Distance = ResolveLod2Distance();
         float activeBillboardDistance = ResolveBillboardDistance();
+        bool skipLod0OnWebGL = ShouldSkipLod0OnWebGL();
 
         if (ShouldForceBillboards())
         {
@@ -962,6 +966,11 @@ public class CrowdController : MonoBehaviour
         if (lodMeshes.Length >= 3 && distance >= activeLod2Distance)
         {
             return lodMeshes[2];
+        }
+
+        if (skipLod0OnWebGL && lodMeshes.Length >= 2)
+        {
+            return lodMeshes[1];
         }
 
         if (lodMeshes.Length >= 2 && distance >= activeLod1Distance)
@@ -1136,6 +1145,11 @@ public class CrowdController : MonoBehaviour
     private bool ShouldForceBillboards()
     {
         return ResolveActiveDebugRenderMode() == DebugRenderMode.BillboardsOnly;
+    }
+
+    private bool ShouldSkipLod0OnWebGL()
+    {
+        return Application.platform == RuntimePlatform.WebGLPlayer && useWebGLSkipLod0;
     }
 
     private bool UseNonInstancedWebGLMeshFallback()
