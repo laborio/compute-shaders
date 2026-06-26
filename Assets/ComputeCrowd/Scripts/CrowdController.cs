@@ -23,6 +23,8 @@ public class CrowdController : MonoBehaviour
     private static readonly int ColorBId = Shader.PropertyToID("_ColorB");
     private static readonly int ColorAId = Shader.PropertyToID("_ColorA");
     private static readonly int AnimDataId = Shader.PropertyToID("_AnimData");
+    private static readonly int TransitionFadeId = Shader.PropertyToID("_TransitionFade");
+    private static readonly int FallbackTransitionFadeId = Shader.PropertyToID("_FallbackTransitionFade");
     private static readonly int FallbackColorRId = Shader.PropertyToID("_FallbackColorR");
     private static readonly int FallbackColorGId = Shader.PropertyToID("_FallbackColorG");
     private static readonly int FallbackColorBId = Shader.PropertyToID("_FallbackColorB");
@@ -95,6 +97,12 @@ public class CrowdController : MonoBehaviour
     [SerializeField] private Texture2D atlasMap;
     [SerializeField] private Texture2D billboardColor01;
     [SerializeField] private Texture2D billboardColor02;
+    [SerializeField] private Texture2D billboardSideColor01;
+    [SerializeField] private Texture2D billboardSideColor02;
+    [SerializeField] private Texture2D billboardSeatedColor01;
+    [SerializeField] private Texture2D billboardSeatedColor02;
+    [SerializeField] private Texture2D billboardSeatedSideColor01;
+    [SerializeField] private Texture2D billboardSeatedSideColor02;
     [SerializeField] private Texture2D outfitDataMap;
     [SerializeField] private Material materialTemplate;
     [SerializeField] private Material billboardMaterialTemplate;
@@ -116,12 +124,24 @@ public class CrowdController : MonoBehaviour
     [SerializeField] private float rowJitterY = 0.06f;
     [SerializeField] private float lod1Distance = 18f;
     [SerializeField] private float lod2Distance = 32f;
+    [SerializeField] private float lod3Distance = 40f;
     [SerializeField] private float billboardDistance = 48f;
     [SerializeField] private bool useWebGLLodDistanceOverrides = true;
     [SerializeField] private float webGLLod1Distance = 4f;
     [SerializeField] private float webGLLod2Distance = 7f;
+    [SerializeField] private float webGLLod3Distance = 8.5f;
     [SerializeField] private float webGLBillboardDistance = 10f;
+    [SerializeField] private float billboardTransitionBand = 8f;
     [SerializeField] private float billboardScale = 1f;
+    [SerializeField] private float billboardDepthOffset = 0f;
+    [SerializeField] private float billboardStandingHeightOffset = 0f;
+    [SerializeField] private float billboardSeatedHeightOffset = -0.57f;
+    [SerializeField, Range(0f, 1f)] private float billboardSideViewDotThreshold = 0.72f;
+    [SerializeField] private bool enableLod0 = true;
+    [SerializeField] private bool enableLod1 = true;
+    [SerializeField] private bool enableLod2 = true;
+    [SerializeField] private bool enableLod3 = true;
+    [SerializeField] private bool enableBillboards = true;
     [SerializeField] private int randomSeed = 7;
 
     [Header("Animation")]
@@ -161,7 +181,10 @@ public class CrowdController : MonoBehaviour
     private readonly List<Chunk> chunks = new();
     private MaterialPropertyBlock materialPropertyBlock;
     private Material runtimeMaterial;
-    private Material[] billboardMaterials;
+    private Material[] billboardStandingFrontMaterials;
+    private Material[] billboardStandingSideMaterials;
+    private Material[] billboardSeatedFrontMaterials;
+    private Material[] billboardSeatedSideMaterials;
     private Texture2D poseTexture;
     private Mesh crowdMesh;
     private Mesh billboardMesh;
@@ -193,6 +216,7 @@ public class CrowdController : MonoBehaviour
     private Vector4[] colorBBatch;
     private Vector4[] colorABatch;
     private Vector4[] animDataBatch;
+    private float[] transitionFadeBatch;
 
     public int LastDrawCallCount => lastDrawCallCount;
     public int LastSetPassCount => lastSetPassCount;
@@ -213,17 +237,18 @@ public class CrowdController : MonoBehaviour
     public bool IsWebGLSkipLod0Active =>
         Application.platform == RuntimePlatform.WebGLPlayer && useWebGLSkipLod0 && lodMeshes != null && lodMeshes.Length >= 2;
     public bool HasBillboardMesh => billboardMesh != null;
-    public int BillboardMaterialCount => billboardMaterials?.Length ?? 0;
+    public int BillboardMaterialCount => billboardStandingFrontMaterials?.Length ?? 0;
     public bool UsesDedicatedBillboardShader => UsesDedicatedBillboardMaterial();
     public string BillboardShaderName =>
-        billboardMaterials != null &&
-        billboardMaterials.Length > 0 &&
-        billboardMaterials[0] != null &&
-        billboardMaterials[0].shader != null
-            ? billboardMaterials[0].shader.name
+        billboardStandingFrontMaterials != null &&
+        billboardStandingFrontMaterials.Length > 0 &&
+        billboardStandingFrontMaterials[0] != null &&
+        billboardStandingFrontMaterials[0].shader != null
+            ? billboardStandingFrontMaterials[0].shader.name
             : "<none>";
     public float ActiveLod1Distance => ResolveLod1Distance();
     public float ActiveLod2Distance => ResolveLod2Distance();
+    public float ActiveLod3Distance => ResolveLod3Distance();
     public float ActiveBillboardDistance => ResolveBillboardDistance();
     public bool HasPoseTexture => poseTexture != null;
     public int RuntimeBoneCount => crowdMesh != null ? crowdMesh.bindposes.Length : 0;
@@ -268,10 +293,13 @@ public class CrowdController : MonoBehaviour
         rowJitterY = Mathf.Max(0f, rowJitterY);
         lod1Distance = Mathf.Max(0.1f, lod1Distance);
         lod2Distance = Mathf.Max(lod1Distance, lod2Distance);
+        lod3Distance = Mathf.Max(lod2Distance, lod3Distance);
         billboardDistance = Mathf.Max(lod2Distance, billboardDistance);
         webGLLod1Distance = Mathf.Max(0.1f, webGLLod1Distance);
         webGLLod2Distance = Mathf.Max(webGLLod1Distance, webGLLod2Distance);
+        webGLLod3Distance = Mathf.Max(webGLLod2Distance, webGLLod3Distance);
         webGLBillboardDistance = Mathf.Max(webGLLod2Distance, webGLBillboardDistance);
+        billboardTransitionBand = Mathf.Max(0f, billboardTransitionBand);
         billboardScale = Mathf.Max(0.01f, billboardScale);
         standingHoldRange.x = Mathf.Max(0f, standingHoldRange.x);
         standingHoldRange.y = Mathf.Max(standingHoldRange.x, standingHoldRange.y);
@@ -341,7 +369,10 @@ public class CrowdController : MonoBehaviour
         runtimeMaterial.SetVector(ClipMeta1Id, PackClipMeta(RuntimeClip.Sit));
         runtimeMaterial.SetVector(ClipMeta2Id, PackClipMeta(RuntimeClip.Stand));
 
-        billboardMaterials = BuildBillboardMaterials();
+        billboardStandingFrontMaterials = BuildBillboardMaterials(billboardColor01, billboardColor02);
+        billboardStandingSideMaterials = BuildBillboardMaterials(billboardSideColor01, billboardSideColor02);
+        billboardSeatedFrontMaterials = BuildBillboardMaterials(billboardSeatedColor01, billboardSeatedColor02);
+        billboardSeatedSideMaterials = BuildBillboardMaterials(billboardSeatedSideColor01, billboardSeatedSideColor02);
 
         AllocateBatchBuffers();
         materialPropertyBlock = new MaterialPropertyBlock();
@@ -352,7 +383,7 @@ public class CrowdController : MonoBehaviour
             Debug.Log(
                 $"CrowdController WebGL mode: {ResolveActiveDebugRenderMode()}, " +
                 $"instancing={SystemInfo.supportsInstancing}, " +
-                $"billboardsReady={billboardMesh != null && billboardMaterials != null && billboardMaterials.Length > 0}, " +
+                $"billboardsReady={billboardMesh != null && billboardStandingFrontMaterials != null && billboardStandingFrontMaterials.Length > 0}, " +
                 $"dedicatedBillboardShader={UsesDedicatedBillboardMaterial()}, " +
                 $"billboardShader={BillboardShaderName}");
         }
@@ -794,26 +825,335 @@ public class CrowdController : MonoBehaviour
 
     private void DrawChunk(Chunk chunk)
     {
-        bool useBillboard;
-        Mesh drawMesh = SelectLodMesh(chunk, out useBillboard);
-        if (drawMesh == null)
+        Camera targetCamera = Camera.main;
+        Mesh meshLod = SelectMeshLod(chunk);
+        bool canUseBillboards = HasEnabledBillboards();
+        if (ShouldForceBillboards() && canUseBillboards)
+        {
+            DrawBillboardChunk(chunk, billboardMesh);
+            return;
+        }
+
+        if (meshLod == null)
         {
             return;
         }
 
-        if (useBillboard)
+        if (!canUseBillboards)
         {
-            DrawBillboardChunk(chunk, drawMesh);
+            if (UseNonInstancedWebGLMeshFallback())
+            {
+                DrawMeshChunkNonInstanced(chunk, meshLod);
+                return;
+            }
+
+            DrawMeshChunk(chunk, meshLod);
             return;
         }
 
+        float billboardDistanceThreshold = ResolveBillboardDistance();
+        float halfTransitionBand = ResolveBillboardTransitionBand() * 0.5f;
+        if (halfTransitionBand <= 0f || targetCamera == null)
+        {
+            bool useBillboard = Vector3.Distance(targetCamera != null ? targetCamera.transform.position : Vector3.zero, chunk.bounds.center) >= billboardDistanceThreshold;
+            if (useBillboard)
+            {
+                DrawBillboardChunk(chunk, billboardMesh);
+                return;
+            }
+
+            if (UseNonInstancedWebGLMeshFallback())
+            {
+                DrawMeshChunkNonInstanced(chunk, meshLod);
+                return;
+            }
+
+            DrawMeshChunk(chunk, meshLod);
+            return;
+        }
+
+        Vector3 cameraPosition = targetCamera.transform.position;
+        float bandStart = billboardDistanceThreshold - halfTransitionBand;
+        float bandEnd = billboardDistanceThreshold + halfTransitionBand;
+        float chunkMinDistance = Vector3.Distance(cameraPosition, chunk.bounds.ClosestPoint(cameraPosition));
+        float chunkMaxDistance = Vector3.Distance(cameraPosition, chunk.bounds.center) + chunk.bounds.extents.magnitude;
+
+        if (chunkMaxDistance <= bandStart)
+        {
+            if (UseNonInstancedWebGLMeshFallback())
+            {
+                DrawMeshChunkNonInstanced(chunk, meshLod);
+                return;
+            }
+
+            DrawMeshChunk(chunk, meshLod);
+            return;
+        }
+
+        if (chunkMinDistance >= bandEnd)
+        {
+            DrawBillboardChunk(chunk, billboardMesh);
+            return;
+        }
+
+        DrawChunkWithBillboardTransition(chunk, meshLod, billboardDistanceThreshold, halfTransitionBand, cameraPosition);
+    }
+
+    private void DrawChunkWithBillboardTransition(
+        Chunk chunk,
+        Mesh meshLod,
+        float billboardDistanceThreshold,
+        float halfTransitionBand,
+        Vector3 cameraPosition)
+    {
         if (UseNonInstancedWebGLMeshFallback())
         {
-            DrawMeshChunkNonInstanced(chunk, drawMesh);
-            return;
+            DrawMeshChunkNonInstancedTransition(chunk, meshLod, billboardDistanceThreshold, halfTransitionBand, cameraPosition);
+        }
+        else
+        {
+            DrawMeshChunkTransition(chunk, meshLod, billboardDistanceThreshold, halfTransitionBand, cameraPosition);
         }
 
-        DrawMeshChunk(chunk, drawMesh);
+        DrawBillboardChunkTransition(chunk, billboardMesh, billboardDistanceThreshold, halfTransitionBand, cameraPosition);
+    }
+
+    private void DrawMeshChunkTransition(
+        Chunk chunk,
+        Mesh drawMesh,
+        float billboardDistanceThreshold,
+        float halfTransitionBand,
+        Vector3 cameraPosition)
+    {
+        int countInBatch = 0;
+        for (int i = 0; i < chunk.instanceIndices.Count; i++)
+        {
+            int instanceIndex = chunk.instanceIndices[i];
+            InstanceState state = instances[instanceIndex];
+            float meshFade = 1f - ComputeBillboardBlend(state.matrix.GetColumn(3), cameraPosition, billboardDistanceThreshold, halfTransitionBand);
+            if (meshFade <= 0f)
+            {
+                continue;
+            }
+
+            OutfitPreset outfit = outfits[Mathf.Clamp(state.outfitIndex, 0, outfits.Length - 1)];
+            RuntimeClip runtimeClip = GetRuntimeClip(state.playbackState);
+            matrixBatch[countInBatch] = state.matrix;
+            colorRBatch[countInBatch] = outfit.colorR;
+            colorGBatch[countInBatch] = outfit.colorG;
+            colorBBatch[countInBatch] = outfit.colorB;
+            colorABatch[countInBatch] = outfit.colorA;
+            animDataBatch[countInBatch] = new Vector4(
+                (float)runtimeClip,
+                state.clipTime,
+                ResolveRenderModeFlag(false),
+                ResolveDebugModeFlag());
+            transitionFadeBatch[countInBatch] = meshFade;
+            frameVisibleInstanceCount++;
+            frameVisibleMeshInstanceCount++;
+            countInBatch++;
+
+            if (countInBatch == maxInstancesPerBatch)
+            {
+                FlushBatch(drawMesh, runtimeMaterial, countInBatch);
+                countInBatch = 0;
+            }
+        }
+
+        if (countInBatch > 0)
+        {
+            FlushBatch(drawMesh, runtimeMaterial, countInBatch);
+        }
+    }
+
+    private void DrawMeshChunkNonInstancedTransition(
+        Chunk chunk,
+        Mesh drawMesh,
+        float billboardDistanceThreshold,
+        float halfTransitionBand,
+        Vector3 cameraPosition)
+    {
+        for (int i = 0; i < chunk.instanceIndices.Count; i++)
+        {
+            int instanceIndex = chunk.instanceIndices[i];
+            InstanceState state = instances[instanceIndex];
+            float meshFade = 1f - ComputeBillboardBlend(state.matrix.GetColumn(3), cameraPosition, billboardDistanceThreshold, halfTransitionBand);
+            if (meshFade <= 0f)
+            {
+                continue;
+            }
+
+            OutfitPreset outfit = outfits[Mathf.Clamp(state.outfitIndex, 0, outfits.Length - 1)];
+            RuntimeClip runtimeClip = GetRuntimeClip(state.playbackState);
+            Vector4 animData = new(
+                (float)runtimeClip,
+                state.clipTime,
+                ResolveRenderModeFlag(false),
+                ResolveDebugModeFlag());
+
+            DrawSingleMeshInstance(drawMesh, runtimeMaterial, state.matrix, outfit, animData, meshFade);
+        }
+    }
+
+    private void DrawBillboardChunkTransition(
+        Chunk chunk,
+        Mesh drawMesh,
+        float billboardDistanceThreshold,
+        float halfTransitionBand,
+        Vector3 cameraPosition)
+    {
+        bool useDedicatedBillboardMaterial = UsesDedicatedBillboardMaterial();
+        for (int variantIndex = 0; variantIndex < GetBillboardVariantCount(); variantIndex++)
+        {
+            for (int seatedPass = 0; seatedPass < 2; seatedPass++)
+            {
+                bool useSeatedBillboardPass = seatedPass == 1;
+                Material variantMaterial = ResolveBillboardMaterial(
+                    variantIndex,
+                    useSeatedBillboardPass ? PlaybackState.SeatedHold : PlaybackState.StandingHold,
+                    false);
+                Material sideVariantMaterial = ResolveBillboardMaterial(
+                    variantIndex,
+                    useSeatedBillboardPass ? PlaybackState.SeatedHold : PlaybackState.StandingHold,
+                    true);
+                if (variantMaterial == null)
+                {
+                    continue;
+                }
+
+                for (int sidePass = 0; sidePass < 2; sidePass++)
+                {
+                    bool useSideBillboardPass = sidePass == 1;
+                    Material passMaterial = useSideBillboardPass ? sideVariantMaterial : variantMaterial;
+                    if (passMaterial == null)
+                    {
+                        continue;
+                    }
+
+                    int countInBatch = 0;
+                    for (int i = 0; i < chunk.instanceIndices.Count; i++)
+                    {
+                        int instanceIndex = chunk.instanceIndices[i];
+                        InstanceState state = instances[instanceIndex];
+                        if (GetBillboardVariantIndex(state.outfitIndex) != variantIndex ||
+                            UsesSeatedBillboard(state.playbackState) != useSeatedBillboardPass ||
+                            UsesSideBillboard(state, cameraPosition) != useSideBillboardPass)
+                        {
+                            continue;
+                        }
+
+                        float billboardFade = ComputeBillboardBlend(state.matrix.GetColumn(3), cameraPosition, billboardDistanceThreshold, halfTransitionBand);
+                        if (billboardFade <= 0f)
+                        {
+                            continue;
+                        }
+
+                        matrixBatch[countInBatch] = CreateBillboardMatrix(state, cameraPosition);
+                        transitionFadeBatch[countInBatch] = billboardFade;
+                        if (!useDedicatedBillboardMaterial)
+                        {
+                            OutfitPreset outfit = outfits[Mathf.Clamp(state.outfitIndex, 0, outfits.Length - 1)];
+                            RuntimeClip runtimeClip = GetRuntimeClip(state.playbackState);
+                            colorRBatch[countInBatch] = outfit.colorR;
+                            colorGBatch[countInBatch] = outfit.colorG;
+                            colorBBatch[countInBatch] = outfit.colorB;
+                            colorABatch[countInBatch] = outfit.colorA;
+                            animDataBatch[countInBatch] = new Vector4(
+                                (float)runtimeClip,
+                                state.clipTime,
+                                ResolveRenderModeFlag(true),
+                                ResolveDebugModeFlag());
+                        }
+
+                        frameVisibleInstanceCount++;
+                        frameVisibleBillboardInstanceCount++;
+                        countInBatch++;
+
+                        if (countInBatch == maxInstancesPerBatch)
+                        {
+                            FlushBillboardBatch(drawMesh, passMaterial, countInBatch, useDedicatedBillboardMaterial);
+                            countInBatch = 0;
+                        }
+                    }
+
+                    if (countInBatch > 0)
+                    {
+                        FlushBillboardBatch(drawMesh, passMaterial, countInBatch, useDedicatedBillboardMaterial);
+                    }
+                }
+            }
+        }
+    }
+
+    private float ComputeBillboardBlend(Vector3 position, Vector3 cameraPosition, float billboardDistanceThreshold, float halfTransitionBand)
+    {
+        if (halfTransitionBand <= 0f)
+        {
+            return Vector3.Distance(cameraPosition, position) >= billboardDistanceThreshold ? 1f : 0f;
+        }
+
+        float startDistance = billboardDistanceThreshold - halfTransitionBand;
+        float endDistance = billboardDistanceThreshold + halfTransitionBand;
+        float distance = Vector3.Distance(cameraPosition, position);
+        return Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(startDistance, endDistance, distance));
+    }
+
+    private float ResolveBillboardTransitionBand()
+    {
+        return billboardTransitionBand;
+    }
+
+    private Mesh SelectMeshLod(Chunk chunk)
+    {
+        if (lodMeshes == null || lodMeshes.Length == 0)
+        {
+            return crowdMesh;
+        }
+
+        if (lodMeshes.Length == 1 || Camera.main == null)
+        {
+            int nearestEnabledLod = FindNearestEnabledMeshLodIndex();
+            return nearestEnabledLod >= 0 ? lodMeshes[nearestEnabledLod] : null;
+        }
+
+        float distance = Vector3.Distance(Camera.main.transform.position, chunk.bounds.center);
+        return SelectMeshLodForDistance(distance);
+    }
+
+    private Mesh SelectMeshLodForDistance(float distance)
+    {
+        float activeLod1Distance = ResolveLod1Distance();
+        float activeLod2Distance = ResolveLod2Distance();
+        float activeLod3Distance = ResolveLod3Distance();
+        bool skipLod0OnWebGL = ShouldSkipLod0OnWebGL();
+
+        if (lodMeshes == null || lodMeshes.Length == 0)
+        {
+            return crowdMesh;
+        }
+
+        if (distance >= activeLod3Distance && IsMeshLodEnabled(3))
+        {
+            return lodMeshes[3];
+        }
+
+        if (distance >= activeLod2Distance && IsMeshLodEnabled(2))
+        {
+            return lodMeshes[2];
+        }
+
+        if (skipLod0OnWebGL && IsMeshLodEnabled(1))
+        {
+            return lodMeshes[1];
+        }
+
+        if (distance >= activeLod1Distance && IsMeshLodEnabled(1))
+        {
+            return lodMeshes[1];
+        }
+
+        int nearestEnabledLod = FindNearestEnabledMeshLodIndex();
+        return nearestEnabledLod >= 0 ? lodMeshes[nearestEnabledLod] : null;
     }
 
     private void DrawMeshChunk(Chunk chunk, Mesh drawMesh)
@@ -836,6 +1176,7 @@ public class CrowdController : MonoBehaviour
                 state.clipTime,
                 ResolveRenderModeFlag(false),
                 ResolveDebugModeFlag());
+            transitionFadeBatch[countInBatch] = 1f;
             frameVisibleInstanceCount++;
             frameVisibleMeshInstanceCount++;
             countInBatch++;
@@ -867,7 +1208,7 @@ public class CrowdController : MonoBehaviour
                 ResolveRenderModeFlag(false),
                 ResolveDebugModeFlag());
 
-            DrawSingleMeshInstance(drawMesh, runtimeMaterial, state.matrix, outfit, animData);
+            DrawSingleMeshInstance(drawMesh, runtimeMaterial, state.matrix, outfit, animData, 1f);
         }
     }
 
@@ -875,54 +1216,78 @@ public class CrowdController : MonoBehaviour
     {
         Vector3 cameraPosition = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
         bool useDedicatedBillboardMaterial = UsesDedicatedBillboardMaterial();
-        for (int variantIndex = 0; variantIndex < billboardMaterials.Length; variantIndex++)
+        for (int variantIndex = 0; variantIndex < GetBillboardVariantCount(); variantIndex++)
         {
-            Material variantMaterial = ResolveBillboardMaterial(variantIndex);
-            if (variantMaterial == null)
+            for (int seatedPass = 0; seatedPass < 2; seatedPass++)
             {
-                continue;
-            }
-
-            int countInBatch = 0;
-            for (int i = 0; i < chunk.instanceIndices.Count; i++)
-            {
-                int instanceIndex = chunk.instanceIndices[i];
-                InstanceState state = instances[instanceIndex];
-                if (GetBillboardVariantIndex(state.outfitIndex) != variantIndex)
+                bool useSeatedBillboardPass = seatedPass == 1;
+                Material variantMaterial = ResolveBillboardMaterial(
+                    variantIndex,
+                    useSeatedBillboardPass ? PlaybackState.SeatedHold : PlaybackState.StandingHold,
+                    false);
+                Material sideVariantMaterial = ResolveBillboardMaterial(
+                    variantIndex,
+                    useSeatedBillboardPass ? PlaybackState.SeatedHold : PlaybackState.StandingHold,
+                    true);
+                if (variantMaterial == null)
                 {
                     continue;
                 }
 
-                matrixBatch[countInBatch] = CreateBillboardMatrix(state, cameraPosition);
-                if (!useDedicatedBillboardMaterial)
+                for (int sidePass = 0; sidePass < 2; sidePass++)
                 {
-                    OutfitPreset outfit = outfits[Mathf.Clamp(state.outfitIndex, 0, outfits.Length - 1)];
-                    RuntimeClip runtimeClip = GetRuntimeClip(state.playbackState);
-                    colorRBatch[countInBatch] = outfit.colorR;
-                    colorGBatch[countInBatch] = outfit.colorG;
-                    colorBBatch[countInBatch] = outfit.colorB;
-                    colorABatch[countInBatch] = outfit.colorA;
-                    animDataBatch[countInBatch] = new Vector4(
-                        (float)runtimeClip,
-                        state.clipTime,
-                        ResolveRenderModeFlag(true),
-                        ResolveDebugModeFlag());
+                    bool useSideBillboardPass = sidePass == 1;
+                    Material passMaterial = useSideBillboardPass ? sideVariantMaterial : variantMaterial;
+                    if (passMaterial == null)
+                    {
+                        continue;
+                    }
+
+                    int countInBatch = 0;
+                    for (int i = 0; i < chunk.instanceIndices.Count; i++)
+                    {
+                        int instanceIndex = chunk.instanceIndices[i];
+                        InstanceState state = instances[instanceIndex];
+                        if (GetBillboardVariantIndex(state.outfitIndex) != variantIndex ||
+                            UsesSeatedBillboard(state.playbackState) != useSeatedBillboardPass ||
+                            UsesSideBillboard(state, cameraPosition) != useSideBillboardPass)
+                        {
+                            continue;
+                        }
+
+                        matrixBatch[countInBatch] = CreateBillboardMatrix(state, cameraPosition);
+                        transitionFadeBatch[countInBatch] = 1f;
+                        if (!useDedicatedBillboardMaterial)
+                        {
+                            OutfitPreset outfit = outfits[Mathf.Clamp(state.outfitIndex, 0, outfits.Length - 1)];
+                            RuntimeClip runtimeClip = GetRuntimeClip(state.playbackState);
+                            colorRBatch[countInBatch] = outfit.colorR;
+                            colorGBatch[countInBatch] = outfit.colorG;
+                            colorBBatch[countInBatch] = outfit.colorB;
+                            colorABatch[countInBatch] = outfit.colorA;
+                            animDataBatch[countInBatch] = new Vector4(
+                                (float)runtimeClip,
+                                state.clipTime,
+                                ResolveRenderModeFlag(true),
+                                ResolveDebugModeFlag());
+                        }
+
+                        frameVisibleInstanceCount++;
+                        frameVisibleBillboardInstanceCount++;
+                        countInBatch++;
+
+                        if (countInBatch == maxInstancesPerBatch)
+                        {
+                            FlushBillboardBatch(drawMesh, passMaterial, countInBatch, useDedicatedBillboardMaterial);
+                            countInBatch = 0;
+                        }
+                    }
+
+                    if (countInBatch > 0)
+                    {
+                        FlushBillboardBatch(drawMesh, passMaterial, countInBatch, useDedicatedBillboardMaterial);
+                    }
                 }
-
-                frameVisibleInstanceCount++;
-                frameVisibleBillboardInstanceCount++;
-                countInBatch++;
-
-                if (countInBatch == maxInstancesPerBatch)
-                {
-                    FlushBillboardBatch(drawMesh, variantMaterial, countInBatch, useDedicatedBillboardMaterial);
-                    countInBatch = 0;
-                }
-            }
-
-            if (countInBatch > 0)
-            {
-                FlushBillboardBatch(drawMesh, variantMaterial, countInBatch, useDedicatedBillboardMaterial);
             }
         }
     }
@@ -937,7 +1302,7 @@ public class CrowdController : MonoBehaviour
 
         if (ShouldForceBillboards())
         {
-            if (billboardMesh != null && billboardMaterials != null && billboardMaterials.Length > 0)
+            if (HasEnabledBillboards())
             {
                 useBillboard = true;
                 return billboardMesh;
@@ -953,32 +1318,39 @@ public class CrowdController : MonoBehaviour
 
         if (lodMeshes.Length == 1 || Camera.main == null)
         {
-            return lodMeshes[0];
+            int fallbackLodIndex = FindNearestEnabledMeshLodIndex();
+            return fallbackLodIndex >= 0 ? lodMeshes[fallbackLodIndex] : crowdMesh;
         }
 
         float distance = Vector3.Distance(Camera.main.transform.position, chunk.bounds.center);
-        if (billboardMesh != null && billboardMaterials != null && billboardMaterials.Length > 0 && distance >= activeBillboardDistance)
+        if (HasEnabledBillboards() && distance >= activeBillboardDistance)
         {
             useBillboard = true;
             return billboardMesh;
         }
 
-        if (lodMeshes.Length >= 3 && distance >= activeLod2Distance)
+        if (distance >= ResolveLod3Distance() && IsMeshLodEnabled(3))
+        {
+            return lodMeshes[3];
+        }
+
+        if (distance >= activeLod2Distance && IsMeshLodEnabled(2))
         {
             return lodMeshes[2];
         }
 
-        if (skipLod0OnWebGL && lodMeshes.Length >= 2)
+        if (skipLod0OnWebGL && IsMeshLodEnabled(1))
         {
             return lodMeshes[1];
         }
 
-        if (lodMeshes.Length >= 2 && distance >= activeLod1Distance)
+        if (distance >= activeLod1Distance && IsMeshLodEnabled(1))
         {
             return lodMeshes[1];
         }
 
-        return lodMeshes[0];
+        int nearestEnabledLod = FindNearestEnabledMeshLodIndex();
+        return nearestEnabledLod >= 0 ? lodMeshes[nearestEnabledLod] : crowdMesh;
     }
 
     private Matrix4x4 CreateBillboardMatrix(InstanceState state, Vector3 cameraPosition)
@@ -990,6 +1362,14 @@ public class CrowdController : MonoBehaviour
             sourceMatrix.GetColumn(1).magnitude,
             sourceMatrix.GetColumn(2).magnitude);
         scale *= billboardScale;
+        Vector3 sourceForward = sourceMatrix.GetColumn(2);
+        sourceForward.y = 0f;
+        if (sourceForward.sqrMagnitude < 0.0001f)
+        {
+            sourceForward = Vector3.forward;
+        }
+
+        position += sourceForward.normalized * billboardDepthOffset;
 
         Vector3 toCamera = cameraPosition - position;
         toCamera.y = 0f;
@@ -1007,11 +1387,17 @@ public class CrowdController : MonoBehaviour
     {
         return state.playbackState switch
         {
-            PlaybackState.StandingHold => 0f,
-            PlaybackState.SittingDown => -Mathf.SmoothStep(0f, characterHeight * 0.3f, state.clipTime),
-            PlaybackState.SeatedHold => -characterHeight * 0.3f,
-            PlaybackState.StandingUp => -Mathf.SmoothStep(characterHeight * 0.3f, 0f, state.clipTime),
-            _ => 0f,
+            PlaybackState.StandingHold => billboardStandingHeightOffset,
+            PlaybackState.SittingDown => Mathf.Lerp(
+                billboardStandingHeightOffset,
+                billboardSeatedHeightOffset,
+                Mathf.SmoothStep(0f, 1f, state.clipTime)),
+            PlaybackState.SeatedHold => billboardSeatedHeightOffset,
+            PlaybackState.StandingUp => Mathf.Lerp(
+                billboardSeatedHeightOffset,
+                billboardStandingHeightOffset,
+                Mathf.SmoothStep(0f, 1f, state.clipTime)),
+            _ => billboardStandingHeightOffset,
         };
     }
 
@@ -1020,10 +1406,10 @@ public class CrowdController : MonoBehaviour
         return billboardMaterialTemplate != null && billboardMaterialTemplate.shader != null;
     }
 
-    private Material[] BuildBillboardMaterials()
+    private Material[] BuildBillboardMaterials(Texture2D firstVariant, Texture2D secondVariant)
     {
         List<Material> materials = new();
-        Texture2D[] variants = { billboardColor01, billboardColor02 };
+        Texture2D[] variants = { firstVariant, secondVariant };
         bool useDedicatedBillboardMaterial = UsesDedicatedBillboardMaterial();
         for (int variantIndex = 0; variantIndex < variants.Length; variantIndex++)
         {
@@ -1071,26 +1457,75 @@ public class CrowdController : MonoBehaviour
         return materials.ToArray();
     }
 
+    private int GetBillboardVariantCount()
+    {
+        return billboardStandingFrontMaterials?.Length ?? 0;
+    }
+
     private int GetBillboardVariantIndex(int outfitIndex)
     {
-        if (billboardMaterials == null || billboardMaterials.Length == 0)
+        if (billboardStandingFrontMaterials == null || billboardStandingFrontMaterials.Length == 0)
         {
             return -1;
         }
 
         int presetIndex = Mathf.Clamp(outfitIndex, 0, outfits.Length - 1);
         int variantIndex = outfits[presetIndex].billboardVariant;
-        return Mathf.Clamp(variantIndex, 0, billboardMaterials.Length - 1);
+        return Mathf.Clamp(variantIndex, 0, billboardStandingFrontMaterials.Length - 1);
     }
 
-    private Material ResolveBillboardMaterial(int variantIndex)
+    private Material ResolveBillboardMaterial(int variantIndex, PlaybackState playbackState, bool useSideView)
     {
-        if (billboardMaterials == null || variantIndex < 0 || variantIndex >= billboardMaterials.Length)
+        if (variantIndex < 0)
         {
             return null;
         }
 
-        return billboardMaterials[variantIndex];
+        bool prefersSeated = UsesSeatedBillboard(playbackState);
+        Material[] primaryMaterials = prefersSeated
+            ? (useSideView ? billboardSeatedSideMaterials : billboardSeatedFrontMaterials)
+            : (useSideView ? billboardStandingSideMaterials : billboardStandingFrontMaterials);
+        Material[] fallbackMaterials = prefersSeated ? billboardSeatedFrontMaterials : billboardStandingFrontMaterials;
+
+        if (primaryMaterials != null &&
+            variantIndex < primaryMaterials.Length &&
+            primaryMaterials[variantIndex] != null)
+        {
+            return primaryMaterials[variantIndex];
+        }
+
+        if (fallbackMaterials == null || variantIndex >= fallbackMaterials.Length)
+        {
+            return null;
+        }
+
+        return fallbackMaterials[variantIndex];
+    }
+
+    private static bool UsesSeatedBillboard(PlaybackState playbackState)
+    {
+        return playbackState != PlaybackState.StandingHold;
+    }
+
+    private bool UsesSideBillboard(InstanceState state, Vector3 cameraPosition)
+    {
+        Vector3 position = state.matrix.GetColumn(3);
+        Vector3 toCamera = cameraPosition - position;
+        toCamera.y = 0f;
+        if (toCamera.sqrMagnitude < 0.0001f)
+        {
+            return false;
+        }
+
+        Vector3 forward = state.matrix.GetColumn(2);
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.0001f)
+        {
+            forward = Vector3.forward;
+        }
+
+        float facingDot = Mathf.Abs(Vector3.Dot(forward.normalized, toCamera.normalized));
+        return facingDot < billboardSideViewDotThreshold;
     }
 
     private static RuntimeClip GetRuntimeClip(PlaybackState playbackState)
@@ -1136,8 +1571,8 @@ public class CrowdController : MonoBehaviour
             useWebGLBillboardFallback &&
             Application.platform == RuntimePlatform.WebGLPlayer &&
             billboardMesh != null &&
-            billboardMaterials != null &&
-            billboardMaterials.Length > 0;
+            billboardStandingFrontMaterials != null &&
+            billboardStandingFrontMaterials.Length > 0;
 
         return webGlFallbackAvailable ? DebugRenderMode.BillboardsOnly : DebugRenderMode.Normal;
     }
@@ -1169,6 +1604,13 @@ public class CrowdController : MonoBehaviour
         return Application.platform == RuntimePlatform.WebGLPlayer && useWebGLLodDistanceOverrides
             ? webGLLod2Distance
             : lod2Distance;
+    }
+
+    private float ResolveLod3Distance()
+    {
+        return Application.platform == RuntimePlatform.WebGLPlayer && useWebGLLodDistanceOverrides
+            ? webGLLod3Distance
+            : lod3Distance;
     }
 
     private float ResolveBillboardDistance()
@@ -1261,6 +1703,7 @@ public class CrowdController : MonoBehaviour
         SetExactVectorArray(ColorBId, colorBBatch, count);
         SetExactVectorArray(ColorAId, colorABatch, count);
         SetExactVectorArray(AnimDataId, animDataBatch, count);
+        SetExactFloatArray(TransitionFadeId, transitionFadeBatch, count);
 
         Graphics.DrawMeshInstanced(
             drawMesh,
@@ -1291,19 +1734,21 @@ public class CrowdController : MonoBehaviour
         frameSetPassCount++;
         frameTriangleCount += GetTriangleCount(drawMesh) * (long)count;
 
+        materialPropertyBlock.Clear();
+        SetExactFloatArray(TransitionFadeId, transitionFadeBatch, count);
         Graphics.DrawMeshInstanced(
             drawMesh,
             0,
             material,
             matrixBatch,
             count,
-            null,
+            materialPropertyBlock,
             ShadowCastingMode.Off,
             false,
             gameObject.layer);
     }
 
-    private void DrawSingleMeshInstance(Mesh drawMesh, Material material, Matrix4x4 matrix, OutfitPreset outfit, Vector4 animData)
+    private void DrawSingleMeshInstance(Mesh drawMesh, Material material, Matrix4x4 matrix, OutfitPreset outfit, Vector4 animData, float transitionFade)
     {
         if (drawMesh == null || material == null || materialPropertyBlock == null)
         {
@@ -1327,6 +1772,8 @@ public class CrowdController : MonoBehaviour
         materialPropertyBlock.SetVector(FallbackColorBId, outfit.colorB);
         materialPropertyBlock.SetVector(FallbackColorAId, outfit.colorA);
         materialPropertyBlock.SetVector(FallbackAnimDataId, animData);
+        materialPropertyBlock.SetFloat(FallbackTransitionFadeId, transitionFade);
+        materialPropertyBlock.SetFloat(TransitionFadeId, transitionFade);
 
         Graphics.DrawMesh(
             drawMesh,
@@ -1350,6 +1797,49 @@ public class CrowdController : MonoBehaviour
         return (int)(mesh.GetIndexCount(0) / 3);
     }
 
+    private bool HasEnabledBillboards()
+    {
+        return enableBillboards &&
+            billboardMesh != null &&
+            billboardStandingFrontMaterials != null &&
+            billboardStandingFrontMaterials.Length > 0;
+    }
+
+    private bool IsMeshLodEnabled(int lodIndex)
+    {
+        if (lodMeshes == null || lodIndex < 0 || lodIndex >= lodMeshes.Length || lodMeshes[lodIndex] == null)
+        {
+            return false;
+        }
+
+        return lodIndex switch
+        {
+            0 => enableLod0 && !ShouldSkipLod0OnWebGL(),
+            1 => enableLod1,
+            2 => enableLod2,
+            3 => enableLod3,
+            _ => true,
+        };
+    }
+
+    private int FindNearestEnabledMeshLodIndex()
+    {
+        if (lodMeshes == null)
+        {
+            return -1;
+        }
+
+        for (int lodIndex = 0; lodIndex < lodMeshes.Length; lodIndex++)
+        {
+            if (IsMeshLodEnabled(lodIndex))
+            {
+                return lodIndex;
+            }
+        }
+
+        return -1;
+    }
+
     private void AllocateBatchBuffers()
     {
         maxInstancesPerBatch = Application.platform == RuntimePlatform.WebGLPlayer
@@ -1361,6 +1851,7 @@ public class CrowdController : MonoBehaviour
         colorBBatch = new Vector4[maxInstancesPerBatch];
         colorABatch = new Vector4[maxInstancesPerBatch];
         animDataBatch = new Vector4[maxInstancesPerBatch];
+        transitionFadeBatch = new float[maxInstancesPerBatch];
     }
 
     private void SetExactVectorArray(int propertyId, Vector4[] source, int count)
@@ -1381,6 +1872,24 @@ public class CrowdController : MonoBehaviour
         materialPropertyBlock.SetVectorArray(propertyId, exactValues);
     }
 
+    private void SetExactFloatArray(int propertyId, float[] source, int count)
+    {
+        if (source == null || count <= 0)
+        {
+            return;
+        }
+
+        if (count == source.Length)
+        {
+            materialPropertyBlock.SetFloatArray(propertyId, source);
+            return;
+        }
+
+        float[] exactValues = new float[count];
+        Array.Copy(source, exactValues, count);
+        materialPropertyBlock.SetFloatArray(propertyId, exactValues);
+    }
+
     private void ReleaseRuntimeResources()
     {
         if (runtimeMaterial != null)
@@ -1396,26 +1905,92 @@ public class CrowdController : MonoBehaviour
             runtimeMaterial = null;
         }
 
-        if (billboardMaterials != null)
+        if (billboardStandingFrontMaterials != null)
         {
-            for (int i = 0; i < billboardMaterials.Length; i++)
+            for (int i = 0; i < billboardStandingFrontMaterials.Length; i++)
             {
-                if (billboardMaterials[i] == null)
+                if (billboardStandingFrontMaterials[i] == null)
                 {
                     continue;
                 }
 
                 if (Application.isPlaying)
                 {
-                    Destroy(billboardMaterials[i]);
+                    Destroy(billboardStandingFrontMaterials[i]);
                 }
                 else
                 {
-                    DestroyImmediate(billboardMaterials[i]);
+                    DestroyImmediate(billboardStandingFrontMaterials[i]);
                 }
             }
 
-            billboardMaterials = null;
+            billboardStandingFrontMaterials = null;
+        }
+
+        if (billboardStandingSideMaterials != null)
+        {
+            for (int i = 0; i < billboardStandingSideMaterials.Length; i++)
+            {
+                if (billboardStandingSideMaterials[i] == null)
+                {
+                    continue;
+                }
+
+                if (Application.isPlaying)
+                {
+                    Destroy(billboardStandingSideMaterials[i]);
+                }
+                else
+                {
+                    DestroyImmediate(billboardStandingSideMaterials[i]);
+                }
+            }
+
+            billboardStandingSideMaterials = null;
+        }
+
+        if (billboardSeatedFrontMaterials != null)
+        {
+            for (int i = 0; i < billboardSeatedFrontMaterials.Length; i++)
+            {
+                if (billboardSeatedFrontMaterials[i] == null)
+                {
+                    continue;
+                }
+
+                if (Application.isPlaying)
+                {
+                    Destroy(billboardSeatedFrontMaterials[i]);
+                }
+                else
+                {
+                    DestroyImmediate(billboardSeatedFrontMaterials[i]);
+                }
+            }
+
+            billboardSeatedFrontMaterials = null;
+        }
+
+        if (billboardSeatedSideMaterials != null)
+        {
+            for (int i = 0; i < billboardSeatedSideMaterials.Length; i++)
+            {
+                if (billboardSeatedSideMaterials[i] == null)
+                {
+                    continue;
+                }
+
+                if (Application.isPlaying)
+                {
+                    Destroy(billboardSeatedSideMaterials[i]);
+                }
+                else
+                {
+                    DestroyImmediate(billboardSeatedSideMaterials[i]);
+                }
+            }
+
+            billboardSeatedSideMaterials = null;
         }
 
         if (poseTexture != null)

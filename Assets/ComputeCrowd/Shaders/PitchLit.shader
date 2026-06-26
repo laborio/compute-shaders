@@ -47,6 +47,13 @@ Shader "ComputeCrowd/PitchLit"
         _LawnStripe2RotationDegrees("Lawn Stripe 2 Rotation Degrees", Float) = 39.263
         _LawnStripe2Strength("Lawn Stripe 2 Strength", Range(0, 1)) = 0.334
 
+        _SpotlightCenter("Spotlight Center", Vector) = (0.5, 0.5, 0, 0)
+        _SpotlightHalfSize("Spotlight Half Size", Vector) = (0.37, 0.315, 0, 0)
+        _SpotlightFeather("Spotlight Feather", Range(0.001, 0.5)) = 0.18
+        _SpotlightInsideBoost("Spotlight Inside Boost", Range(0, 2)) = 1.08
+        _SpotlightOutsideDim("Spotlight Outside Dim", Range(0, 1)) = 0.72
+        _SpotlightTint("Spotlight Tint", Color) = (1.03, 1.02, 0.98, 1)
+
         [HideInInspector] _Surface("__surface", Float) = 0
         [HideInInspector] _Blend("__blend", Float) = 0
         [HideInInspector] _Cull("__cull", Float) = 2
@@ -112,6 +119,9 @@ Shader "ComputeCrowd/PitchLit"
                 float4 _LawnStripe2Center;
                 float4 _LawnStripe2HalfSize;
                 float4 _LawnStripe2TextureOffset;
+                float4 _SpotlightCenter;
+                float4 _SpotlightHalfSize;
+                float4 _SpotlightTint;
                 float _UseBaseTexture;
                 float _UseNormalMap;
                 float _UseSecondGrassSample;
@@ -135,6 +145,9 @@ Shader "ComputeCrowd/PitchLit"
                 float _LawnStripe2TextureScale;
                 float _LawnStripe2RotationDegrees;
                 float _LawnStripe2Strength;
+                float _SpotlightFeather;
+                float _SpotlightInsideBoost;
+                float _SpotlightOutsideDim;
             CBUFFER_END
 
             struct Attributes
@@ -266,6 +279,16 @@ Shader "ComputeCrowd/PitchLit"
                 return diffuse;
             }
 
+            half EvaluateSpotlightMask(float2 rawUv)
+            {
+                float2 maskDistance = abs(rawUv - _SpotlightCenter.xy);
+                float2 fadeStart = max(_SpotlightHalfSize.xy - _SpotlightFeather.xx, 0.0.xx);
+                float2 featherRange = max(_SpotlightHalfSize.xy - fadeStart, 0.0001.xx);
+                float2 fade = saturate((_SpotlightHalfSize.xy - maskDistance) / featherRange);
+                fade = smoothstep(0.0.xx, 1.0.xx, fade);
+                return fade.x * fade.y;
+            }
+
             Varyings Vert(Attributes input)
             {
                 Varyings output = (Varyings)0;
@@ -360,6 +383,12 @@ Shader "ComputeCrowd/PitchLit"
             #endif
 
                 half3 finalColor = albedo * diffuseLighting + specularLighting;
+                half spotlightMask = EvaluateSpotlightMask(input.rawUv);
+                half3 spotlightScale = lerp(
+                    half3(_SpotlightOutsideDim, _SpotlightOutsideDim, _SpotlightOutsideDim),
+                    _SpotlightTint.rgb * _SpotlightInsideBoost,
+                    spotlightMask);
+                finalColor *= spotlightScale;
                 finalColor = MixFog(finalColor, fogFactor);
                 return half4(finalColor, _Opacity);
             }

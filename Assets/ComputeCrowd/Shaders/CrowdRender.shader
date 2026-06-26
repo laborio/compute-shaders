@@ -5,6 +5,12 @@ Shader "ComputeCrowd/CrowdRender"
         _BaseMap("Base Map", 2D) = "white" {}
         _BillboardMap("Billboard Map", 2D) = "black" {}
         _OutfitDataMap("Outfit Data Map", 2D) = "black" {}
+        _ColorTint("Color Tint", Color) = (0.8, 0.82, 0.86, 1)
+        _AmbientScale("Ambient Scale", Range(0, 1)) = 0.18
+        _DirectLightScale("Direct Light Scale", Range(0, 1)) = 0.4
+        _Brightness("Brightness", Range(0, 1)) = 0.55
+        _BaseAreaBrightness("Base Area Brightness", Range(0, 2)) = 1
+        [HideInInspector] _FallbackTransitionFade("Fallback Transition Fade", Float) = 1
         [HideInInspector] _FallbackColorR("Fallback Color R", Vector) = (1, 0, 0, 0)
         [HideInInspector] _FallbackColorG("Fallback Color G", Vector) = (0, 1, 0, 0)
         [HideInInspector] _FallbackColorB("Fallback Color B", Vector) = (0, 0, 1, 0)
@@ -50,11 +56,17 @@ Shader "ComputeCrowd/CrowdRender"
                 float4 _ClipMeta0;
                 float4 _ClipMeta1;
                 float4 _ClipMeta2;
+                float4 _ColorTint;
                 float4 _FallbackColorR;
                 float4 _FallbackColorG;
                 float4 _FallbackColorB;
                 float4 _FallbackColorA;
                 float4 _FallbackAnimData;
+                float _FallbackTransitionFade;
+                float _AmbientScale;
+                float _DirectLightScale;
+                float _Brightness;
+                float _BaseAreaBrightness;
                 int _BoneCount;
             CBUFFER_END
 
@@ -64,6 +76,7 @@ Shader "ComputeCrowd/CrowdRender"
                 UNITY_DEFINE_INSTANCED_PROP(float4, _ColorB)
                 UNITY_DEFINE_INSTANCED_PROP(float4, _ColorA)
                 UNITY_DEFINE_INSTANCED_PROP(float4, _AnimData)
+                UNITY_DEFINE_INSTANCED_PROP(float, _TransitionFade)
             UNITY_INSTANCING_BUFFER_END(PerInstance)
 
             #if defined(SHADER_API_GLES3)
@@ -273,10 +286,25 @@ Shader "ComputeCrowd/CrowdRender"
                 return colorR * mask.r + colorG * mask.g + colorB * mask.b + colorA * mask.a;
             }
 
+            half GetTransitionFade()
+            {
+                #if defined(UNITY_INSTANCING_ENABLED)
+                    return UNITY_ACCESS_INSTANCED_PROP(PerInstance, _TransitionFade);
+                #else
+                    return _FallbackTransitionFade;
+                #endif
+            }
+
+            half InterleavedNoise(float2 pixelPosition)
+            {
+                return frac(52.9829189h * frac(dot(pixelPosition, float2(0.06711056h, 0.00583715h))));
+            }
+
             half4 frag(Varyings input) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(input);
                 float debugMode = GetAnimData().w;
+                clip(GetTransitionFade() - InterleavedNoise(input.positionCS.xy));
 
                 if (debugMode > 2.5 && debugMode < 3.5)
                 {
@@ -301,17 +329,21 @@ Shader "ComputeCrowd/CrowdRender"
                     half4 maskSample = SAMPLE_TEXTURE2D(_OutfitDataMap, sampler_OutfitDataMap, input.uv);
 
                     half maskWeight = saturate(maskSample.r + maskSample.g + maskSample.b + maskSample.a);
+                    half3 baseColor = baseSample.rgb * _BaseAreaBrightness;
                     half3 outfitColor = ResolveOutfitColor(maskSample);
-                    albedo = lerp(baseSample.rgb, outfitColor, maskWeight);
+                    albedo = lerp(baseColor, outfitColor, maskWeight);
                 }
 
                 Light mainLight = GetMainLight();
                 half3 normalWS = normalize(input.normalWS);
                 half ndotl = saturate(dot(normalWS, mainLight.direction));
-                half3 ambient = SampleSH(normalWS);
-                half3 lighting = ambient + (mainLight.color * (0.2h + ndotl * 0.8h));
+                half3 ambient = SampleSH(normalWS) * _AmbientScale;
+                half3 directLighting = mainLight.color * ((0.2h + ndotl * 0.8h) * _DirectLightScale);
+                half3 lighting = ambient + directLighting;
+                half3 finalColor = albedo * lighting;
+                finalColor *= _ColorTint.rgb * _Brightness;
 
-                return half4(albedo * lighting, 1.0h);
+                return half4(finalColor, 1.0h);
             }
             ENDHLSL
         }

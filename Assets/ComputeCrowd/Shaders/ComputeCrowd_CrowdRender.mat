@@ -27,12 +27,27 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _BillboardMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _OutfitDataMap:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     m_Ints: []
-    m_Floats: []
-    m_Colors: []
+    m_Floats:
+    - _AmbientScale: 0.507
+    - _BaseAreaBrightness: 1.335
+    - _Brightness: 0.568
+    - _DirectLightScale: 0.537
+    - _FallbackTransitionFade: 1
+    m_Colors:
+    - _ColorTint: {r: 0.8726415, g: 0.9562933, b: 1, a: 1}
+    - _FallbackAnimData: {r: 0, g: 0, b: 0, a: 0}
+    - _FallbackColorA: {r: 1, g: 1, b: 1, a: 0}
+    - _FallbackColorB: {r: 0, g: 0, b: 1, a: 0}
+    - _FallbackColorG: {r: 0, g: 1, b: 0, a: 0}
+    - _FallbackColorR: {r: 1, g: 0, b: 0, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

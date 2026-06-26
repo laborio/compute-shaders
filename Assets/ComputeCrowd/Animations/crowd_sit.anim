@@ -109,8 +109,8 @@ AnimationClip:
         inWeight: {x: 0.33333334, y: 0.33333334, z: 0.33333334}
         outWeight: {x: 0.33333334, y: 0.33333334, z: 0.33333334}
       - serializedVersion: 3
-        time: 0.6666667
-        value: {x: 6.945, y: 0, z: 0}
+        time: 0.55
+        value: {x: -20.155, y: 0, z: 0}
         inSlope: {x: 0, y: 0, z: 0}
         outSlope: {x: 0, y: 0, z: 0}
         tangentMode: 0
@@ -698,8 +698,8 @@ AnimationClip:
         inWeight: 0.33333334
         outWeight: 0.33333334
       - serializedVersion: 3
-        time: 0.6666667
-        value: 6.945
+        time: 0.55
+        value: -20.155
         inSlope: 0
         outSlope: 0
         tangentMode: 136
@@ -728,7 +728,7 @@ AnimationClip:
         inWeight: 0.33333334
         outWeight: 0.33333334
       - serializedVersion: 3
-        time: 0.6666667
+        time: 0.55
         value: 0
         inSlope: 0
         outSlope: 0
@@ -758,7 +758,7 @@ AnimationClip:
         inWeight: 0.33333334
         outWeight: 0.33333334
       - serializedVersion: 3
-        time: 0.6666667
+        time: 0.55
         value: 0
         inSlope: 0
         outSlope: 0
@@ -1260,7 +1260,7 @@ AnimationClip:
       m_PostInfinity: 2
       m_RotationOrder: 4
     attribute: m_LocalEulerAngles.z
-    path: AvatarRoot/Hips/Spine/Spine1/Spine2
+    path: AvatarRoot/Hips/Spine/Spine1/Spine2/RightShoulder/RightArm
     classID: 4
     script: {fileID: 0}
     flags: 0
@@ -1272,7 +1272,7 @@ AnimationClip:
       m_PostInfinity: 2
       m_RotationOrder: 4
     attribute: m_LocalEulerAngles.y
-    path: AvatarRoot/Hips/Spine/Spine1/Spine2
+    path: AvatarRoot/Hips/Spine/Spine1/Spine2/RightShoulder/RightArm
     classID: 4
     script: {fileID: 0}
     flags: 0
@@ -1284,7 +1284,7 @@ AnimationClip:
       m_PostInfinity: 2
       m_RotationOrder: 4
     attribute: m_LocalEulerAngles.x
-    path: AvatarRoot/Hips/Spine/Spine1/Spine2
+    path: AvatarRoot/Hips/Spine/Spine1/Spine2/RightShoulder/RightArm
     classID: 4
     script: {fileID: 0}
     flags: 0
@@ -1548,7 +1548,7 @@ AnimationClip:
       m_PostInfinity: 2
       m_RotationOrder: 4
     attribute: m_LocalEulerAngles.x
-    path: AvatarRoot/Hips/Spine/Spine1/Spine2/RightShoulder/RightArm
+    path: AvatarRoot/Hips/Spine/Spine1/Spine2
     classID: 4
     script: {fileID: 0}
     flags: 0
@@ -1560,7 +1560,7 @@ AnimationClip:
       m_PostInfinity: 2
       m_RotationOrder: 4
     attribute: m_LocalEulerAngles.y
-    path: AvatarRoot/Hips/Spine/Spine1/Spine2/RightShoulder/RightArm
+    path: AvatarRoot/Hips/Spine/Spine1/Spine2
     classID: 4
     script: {fileID: 0}
     flags: 0
@@ -1572,7 +1572,7 @@ AnimationClip:
       m_PostInfinity: 2
       m_RotationOrder: 4
     attribute: m_LocalEulerAngles.z
-    path: AvatarRoot/Hips/Spine/Spine1/Spine2/RightShoulder/RightArm
+    path: AvatarRoot/Hips/Spine/Spine1/Spine2
     classID: 4
     script: {fileID: 0}
     flags: 0
