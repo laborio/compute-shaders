@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Serialization;
 
 [DisallowMultipleComponent]
 public class CrowdController : MonoBehaviour
@@ -63,6 +65,13 @@ public class CrowdController : MonoBehaviour
         UnskinnedLit = 2,
         UnskinnedSolid = 3,
         SkinnedSolid = 4,
+        MeshesOnly = 5,
+    }
+
+    private enum LayoutMode
+    {
+        Grid = 0,
+        SeatLayoutAsset = 1,
     }
 
     private struct ClipBakeInfo
@@ -89,6 +98,32 @@ public class CrowdController : MonoBehaviour
         public bool hasBounds;
     }
 
+    private sealed class BillboardBatchBucket
+    {
+        public Material material;
+        public bool useDedicatedBillboardMaterial;
+        public bool isActiveInFrame;
+        public readonly List<Matrix4x4> matrices = new();
+        public readonly List<float> transitionFades = new();
+        public readonly List<Vector4> colorRs = new();
+        public readonly List<Vector4> colorGs = new();
+        public readonly List<Vector4> colorBs = new();
+        public readonly List<Vector4> colorAs = new();
+        public readonly List<Vector4> animDatas = new();
+
+        public void Clear()
+        {
+            isActiveInFrame = false;
+            matrices.Clear();
+            transitionFades.Clear();
+            colorRs.Clear();
+            colorGs.Clear();
+            colorBs.Clear();
+            colorAs.Clear();
+            animDatas.Clear();
+        }
+    }
+
     [Header("Source")]
     [SerializeField] private GameObject crowdSource;
     [SerializeField] private AnimationClip idleClip;
@@ -110,6 +145,13 @@ public class CrowdController : MonoBehaviour
     [SerializeField] private Vector3 modelRotationEuler = new(-90f, 0f, 0f);
 
     [Header("Crowd Layout")]
+    [SerializeField] private LayoutMode layoutMode = LayoutMode.Grid;
+    [SerializeField] private TextAsset seatLayoutAsset;
+    [SerializeField] private bool useSeatLayoutForward = true;
+    [SerializeField] private float seatLayoutForwardYawOffset;
+    [FormerlySerializedAs("seatLayoutLocalOffset")]
+    [SerializeField] private Vector3 seatLayoutWorldOffset;
+    [SerializeField] private float seatLayoutLateralJitter = 0.05f;
     [SerializeField] private int instanceCount = 400;
     [SerializeField] private Vector2 areaSize = new(24f, 16f);
     [SerializeField] private Vector2 chunkSize = new(6f, 6f);
@@ -171,6 +213,21 @@ public class CrowdController : MonoBehaviour
 
     [Header("Debug")]
     [SerializeField] private bool drawChunkGizmos = true;
+    [SerializeField] private bool drawSeatLayoutDebugGizmos = true;
+    [SerializeField] private int seatLayoutDebugStride = 24;
+    [SerializeField] private int seatLayoutDebugMaxMarkers = 2500;
+    [SerializeField] private float seatLayoutDebugMarkerSize = 0.18f;
+    [SerializeField] private bool drawSeatLayoutForwardGizmos = true;
+    [SerializeField] private float seatLayoutDebugForwardLength = 0.4f;
+    [SerializeField] private Color seatLayoutDebugMarkerColor = new(0.15f, 0.95f, 0.35f, 0.9f);
+    [SerializeField] private Color seatLayoutDebugForwardColor = new(1f, 0.45f, 0.1f, 0.9f);
+    [SerializeField] private bool drawSeatLayoutAlignmentGizmos = true;
+    [SerializeField] private GameObject seatLayoutReferenceObject;
+    [SerializeField] private float seatLayoutCenterMarkerSize = 0.6f;
+    [SerializeField] private Color seatLayoutReferenceBoundsColor = new(0.15f, 0.75f, 1f, 0.9f);
+    [SerializeField] private Color seatLayoutSourceBoundsColor = new(1f, 0.2f, 0.85f, 0.9f);
+    [SerializeField] private Color seatLayoutCenterDeltaColor = new(1f, 0.95f, 0.1f, 0.95f);
+    [SerializeField] private bool autoLogSeatLayoutDiagnostics;
     [SerializeField] private DebugRenderMode debugRenderMode = DebugRenderMode.Normal;
     [SerializeField] private bool forceWebGLBillboardsOnly;
     [SerializeField] private bool useWebGLBillboardFallback = true;
@@ -179,6 +236,8 @@ public class CrowdController : MonoBehaviour
 
     private readonly Plane[] frustumPlanes = new Plane[6];
     private readonly List<Chunk> chunks = new();
+    private readonly Dictionary<Material, BillboardBatchBucket> billboardBatchBuckets = new();
+    private readonly List<BillboardBatchBucket> activeBillboardBatchBuckets = new();
     private MaterialPropertyBlock materialPropertyBlock;
     private Material runtimeMaterial;
     private Material[] billboardStandingFrontMaterials;
@@ -195,6 +254,8 @@ public class CrowdController : MonoBehaviour
     private GameObject resolvedSourceRoot;
     private SkinnedMeshRenderer resolvedSourceRenderer;
     private float computedCrowdDepth;
+    private Bounds crowdBounds;
+    private bool hasCrowdBounds;
     private int frameDrawCallCount;
     private int frameSetPassCount;
     private int frameVisibleInstanceCount;
@@ -278,6 +339,7 @@ public class CrowdController : MonoBehaviour
     private void OnValidate()
     {
         instanceCount = Mathf.Max(1, instanceCount);
+        seatLayoutForwardYawOffset = Mathf.Repeat(seatLayoutForwardYawOffset, 360f);
         areaSize.x = Mathf.Max(1f, areaSize.x);
         areaSize.y = Mathf.Max(1f, areaSize.y);
         chunkSize.x = Mathf.Max(1f, chunkSize.x);
@@ -301,6 +363,11 @@ public class CrowdController : MonoBehaviour
         webGLBillboardDistance = Mathf.Max(webGLLod2Distance, webGLBillboardDistance);
         billboardTransitionBand = Mathf.Max(0f, billboardTransitionBand);
         billboardScale = Mathf.Max(0.01f, billboardScale);
+        seatLayoutDebugStride = Mathf.Max(1, seatLayoutDebugStride);
+        seatLayoutDebugMaxMarkers = Mathf.Max(1, seatLayoutDebugMaxMarkers);
+        seatLayoutDebugMarkerSize = Mathf.Max(0.01f, seatLayoutDebugMarkerSize);
+        seatLayoutDebugForwardLength = Mathf.Max(0.01f, seatLayoutDebugForwardLength);
+        seatLayoutCenterMarkerSize = Mathf.Max(0.01f, seatLayoutCenterMarkerSize);
         standingHoldRange.x = Mathf.Max(0f, standingHoldRange.x);
         standingHoldRange.y = Mathf.Max(standingHoldRange.x, standingHoldRange.y);
         seatedHoldRange.x = Mathf.Max(0f, seatedHoldRange.x);
@@ -391,6 +458,11 @@ public class CrowdController : MonoBehaviour
         if (hideSourceCharacter && resolvedSourceRoot != null && resolvedSourceRoot.scene.IsValid())
         {
             resolvedSourceRoot.SetActive(false);
+        }
+
+        if (autoLogSeatLayoutDiagnostics && layoutMode == LayoutMode.SeatLayoutAsset)
+        {
+            LogSeatLayoutDiagnostics();
         }
     }
 
@@ -620,27 +692,69 @@ public class CrowdController : MonoBehaviour
     private void BuildInstances()
     {
         randomGenerator = new System.Random(randomSeed);
-        instances = new InstanceState[instanceCount];
         chunks.Clear();
+        hasCrowdBounds = false;
+
+        if (layoutMode == LayoutMode.SeatLayoutAsset && TryBuildSeatLayoutInstances())
+        {
+            return;
+        }
+
+        BuildGridInstances();
+    }
+
+    private bool TryBuildSeatLayoutInstances()
+    {
+        if (!CrowdSeatLayoutUtility.TryParse(seatLayoutAsset, out CrowdSeatLayoutData layout, out string error))
+        {
+            Debug.LogWarning($"CrowdController could not load seat layout asset. Falling back to grid layout. {error}");
+            return false;
+        }
+
+        int seatCount = layout.SeatCount;
+        instances = new InstanceState[seatCount];
+
+        Vector3[] worldPositions = new Vector3[seatCount];
+        Quaternion[] worldRotations = new Quaternion[seatCount];
+        Vector3 min = new(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
+        Vector3 max = new(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity);
+
+        for (int i = 0; i < seatCount; i++)
+        {
+            CrowdSeatLayoutSeat seat = layout.seats[i];
+            Vector3 worldPosition = ResolveSeatLayoutWorldPosition(layout, seat) + ResolveSeatLayoutLateralJitter(seat);
+            Quaternion worldRotation = ResolveSeatLayoutRotation(seat);
+
+            worldPositions[i] = worldPosition;
+            worldRotations[i] = worldRotation;
+            min = Vector3.Min(min, worldPosition);
+            max = Vector3.Max(max, worldPosition);
+        }
+
+        BuildChunksForInstances(worldPositions, ResolveSeatLayoutInstanceBoundsSize(), out float leftEdge, out float frontEdge, out int chunkCountX, out int chunkCountZ);
+
+        for (int i = 0; i < seatCount; i++)
+        {
+            instances[i] = CreateInstanceState(Matrix4x4.TRS(worldPositions[i], worldRotations[i], Vector3.one * characterScale));
+            AddInstanceToChunk(i, worldPositions[i], leftEdge, frontEdge, chunkCountX, chunkCountZ, ResolveSeatLayoutInstanceBoundsSize());
+        }
+
+        crowdBounds = new Bounds((min + max) * 0.5f, Vector3.Max(max - min, new Vector3(0.1f, characterHeight, 0.1f)));
+        hasCrowdBounds = true;
+        computedCrowdDepth = crowdBounds.size.z;
+        return true;
+    }
+
+    private void BuildGridInstances()
+    {
+        instances = new InstanceState[instanceCount];
 
         int instancesPerRow = ResolveInstancesPerRow();
         int rowCount = ResolveRowCount(instancesPerRow);
         float layoutWidth = ResolveLayoutWidth(instancesPerRow);
         computedCrowdDepth = ResolveCrowdDepth(rowCount);
 
-        int chunkCountX = Mathf.Max(1, Mathf.CeilToInt(layoutWidth / chunkSize.x));
-        int chunkCountZ = Mathf.Max(1, Mathf.CeilToInt(computedCrowdDepth / chunkSize.y));
-        for (int z = 0; z < chunkCountZ; z++)
-        {
-            for (int x = 0; x < chunkCountX; x++)
-            {
-                chunks.Add(new Chunk());
-            }
-        }
-
-        float leftEdge = transform.position.x - (layoutWidth * 0.5f);
-        float frontEdge = transform.position.z;
-
+        Vector3[] positions = new Vector3[instanceCount];
         Quaternion facingRotation = Quaternion.Euler(0f, facingYaw, 0f) * Quaternion.Euler(modelRotationEuler);
         for (int i = 0; i < instanceCount; i++)
         {
@@ -652,45 +766,178 @@ public class CrowdController : MonoBehaviour
             float jitterX = RandomRange(-rowJitterX, rowJitterX);
             float jitterY = RandomRange(-rowJitterY, rowJitterY);
 
-            Vector3 position = transform.position + new Vector3(
+            positions[i] = transform.position + new Vector3(
                 xOffset + jitterX,
                 row * rowSpacingY + jitterY,
                 row * rowSpacingZ);
 
-            PlaybackState initialState = RandomValue() > 0.5f ? PlaybackState.StandingHold : PlaybackState.SeatedHold;
-            float holdDuration = initialState == PlaybackState.StandingHold
-                ? RandomRange(standingHoldRange.x, standingHoldRange.y)
-                : RandomRange(seatedHoldRange.x, seatedHoldRange.y);
+            instances[i] = CreateInstanceState(Matrix4x4.TRS(positions[i], facingRotation, Vector3.one * characterScale));
+        }
 
-            instances[i] = new InstanceState
+        BuildChunksForInstances(positions, new Vector3(rowSpacingX, characterHeight, 1f), out float leftEdge, out float frontEdge, out int chunkCountX, out int chunkCountZ);
+
+        for (int i = 0; i < positions.Length; i++)
+        {
+            AddInstanceToChunk(i, positions[i], leftEdge, frontEdge, chunkCountX, chunkCountZ, new Vector3(rowSpacingX, characterHeight, 1f));
+        }
+
+        crowdBounds = new Bounds(
+            transform.position + new Vector3(0f, ((rowCount - 1) * rowSpacingY + characterHeight) * 0.5f, computedCrowdDepth * 0.5f),
+            new Vector3(layoutWidth, (rowCount - 1) * rowSpacingY + characterHeight, computedCrowdDepth));
+        hasCrowdBounds = true;
+    }
+
+    private InstanceState CreateInstanceState(Matrix4x4 matrix)
+    {
+        PlaybackState initialState = RandomValue() > 0.5f ? PlaybackState.StandingHold : PlaybackState.SeatedHold;
+        float holdDuration = initialState == PlaybackState.StandingHold
+            ? RandomRange(standingHoldRange.x, standingHoldRange.y)
+            : RandomRange(seatedHoldRange.x, seatedHoldRange.y);
+
+        return new InstanceState
+        {
+            matrix = matrix,
+            playbackState = initialState,
+            clipTime = initialState == PlaybackState.SeatedHold ? 1f : 0f,
+            holdTimer = holdDuration,
+            outfitIndex = outfits.Length > 0 ? randomGenerator.Next(0, outfits.Length) : 0,
+        };
+    }
+
+    private void BuildChunksForInstances(
+        Vector3[] positions,
+        Vector3 instanceBoundsSize,
+        out float leftEdge,
+        out float frontEdge,
+        out int chunkCountX,
+        out int chunkCountZ)
+    {
+        Vector3 min = new(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
+        Vector3 max = new(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity);
+
+        for (int i = 0; i < positions.Length; i++)
+        {
+            min = Vector3.Min(min, positions[i]);
+            max = Vector3.Max(max, positions[i]);
+        }
+
+        if (positions.Length == 0)
+        {
+            min = transform.position;
+            max = transform.position;
+        }
+
+        leftEdge = min.x - instanceBoundsSize.x * 0.5f;
+        frontEdge = min.z - instanceBoundsSize.z * 0.5f;
+
+        float width = Mathf.Max(chunkSize.x, (max.x - min.x) + instanceBoundsSize.x);
+        float depth = Mathf.Max(chunkSize.y, (max.z - min.z) + instanceBoundsSize.z);
+        chunkCountX = Mathf.Max(1, Mathf.CeilToInt(width / chunkSize.x));
+        chunkCountZ = Mathf.Max(1, Mathf.CeilToInt(depth / chunkSize.y));
+
+        for (int z = 0; z < chunkCountZ; z++)
+        {
+            for (int x = 0; x < chunkCountX; x++)
             {
-                matrix = Matrix4x4.TRS(position, facingRotation, Vector3.one * characterScale),
-                playbackState = initialState,
-                clipTime = initialState == PlaybackState.SeatedHold ? 1f : 0f,
-                holdTimer = holdDuration,
-                outfitIndex = outfits.Length > 0 ? randomGenerator.Next(0, outfits.Length) : 0,
-            };
-
-            int chunkX = Mathf.Clamp(Mathf.FloorToInt((position.x - leftEdge) / chunkSize.x), 0, chunkCountX - 1);
-            int chunkZ = Mathf.Clamp(Mathf.FloorToInt((position.z - frontEdge) / chunkSize.y), 0, chunkCountZ - 1);
-            Chunk chunk = chunks[(chunkZ * chunkCountX) + chunkX];
-            chunk.instanceIndices.Add(i);
-
-            Bounds instanceBounds = new Bounds(
-                position + new Vector3(0f, characterHeight * 0.5f, 0f),
-                new Vector3(rowSpacingX, characterHeight, 1f));
-
-            if (!chunk.hasBounds)
-            {
-                chunk.bounds = instanceBounds;
-                chunk.hasBounds = true;
-            }
-            else
-            {
-                chunk.bounds.Encapsulate(instanceBounds.min);
-                chunk.bounds.Encapsulate(instanceBounds.max);
+                chunks.Add(new Chunk());
             }
         }
+    }
+
+    private void AddInstanceToChunk(
+        int instanceIndex,
+        Vector3 position,
+        float leftEdge,
+        float frontEdge,
+        int chunkCountX,
+        int chunkCountZ,
+        Vector3 instanceBoundsSize)
+    {
+        int chunkX = Mathf.Clamp(Mathf.FloorToInt((position.x - leftEdge) / chunkSize.x), 0, chunkCountX - 1);
+        int chunkZ = Mathf.Clamp(Mathf.FloorToInt((position.z - frontEdge) / chunkSize.y), 0, chunkCountZ - 1);
+        Chunk chunk = chunks[(chunkZ * chunkCountX) + chunkX];
+        chunk.instanceIndices.Add(instanceIndex);
+
+        Bounds instanceBounds = new Bounds(
+            position + new Vector3(0f, characterHeight * 0.5f, 0f),
+            instanceBoundsSize);
+
+        if (!chunk.hasBounds)
+        {
+            chunk.bounds = instanceBounds;
+            chunk.hasBounds = true;
+        }
+        else
+        {
+            chunk.bounds.Encapsulate(instanceBounds.min);
+            chunk.bounds.Encapsulate(instanceBounds.max);
+        }
+    }
+
+    private Quaternion ResolveSeatLayoutRotation(CrowdSeatLayoutSeat seat)
+    {
+        if (!useSeatLayoutForward)
+        {
+            return Quaternion.Euler(0f, facingYaw, 0f) * Quaternion.Euler(modelRotationEuler);
+        }
+
+        Vector3 worldForward = seat.forward;
+        worldForward.y = 0f;
+        if (worldForward.sqrMagnitude < 0.0001f)
+        {
+            worldForward = Vector3.forward;
+        }
+
+        return Quaternion.LookRotation(worldForward.normalized, Vector3.up)
+            * Quaternion.Euler(0f, seatLayoutForwardYawOffset, 0f)
+            * Quaternion.Euler(modelRotationEuler);
+    }
+
+    private Vector3 ResolveSeatLayoutWorldPosition(CrowdSeatLayoutData layout, CrowdSeatLayoutSeat seat)
+    {
+        return ResolveSeatLayoutWorldPoint(layout, seat.position);
+    }
+
+    private Vector3 ResolveSeatLayoutWorldPoint(CrowdSeatLayoutData layout, Vector3 point)
+    {
+        Vector3 position = point + seatLayoutWorldOffset;
+        if (layout != null && layout.positionsRelativeToSourceCenter)
+        {
+            position += transform.position;
+        }
+
+        return position;
+    }
+
+    private Vector3 ResolveSeatLayoutInstanceBoundsSize()
+    {
+        float width = Mathf.Max(0.5f, characterScale);
+        float depth = Mathf.Max(0.5f, characterScale);
+        return new Vector3(width, characterHeight, depth);
+    }
+
+    private Vector3 ResolveSeatLayoutLateralJitter(CrowdSeatLayoutSeat seat)
+    {
+        if (seatLayoutLateralJitter <= 0f)
+        {
+            return Vector3.zero;
+        }
+
+        Vector3 forward = seat.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.0001f)
+        {
+            forward = Vector3.forward;
+        }
+
+        Vector3 lateral = Vector3.Cross(Vector3.up, forward.normalized);
+        if (lateral.sqrMagnitude < 0.0001f)
+        {
+            return Vector3.zero;
+        }
+
+        float offset = RandomRange(-seatLayoutLateralJitter, seatLayoutLateralJitter);
+        return lateral.normalized * offset;
     }
 
     private int ResolveInstancesPerRow()
@@ -800,6 +1047,7 @@ public class CrowdController : MonoBehaviour
         frameVisibleBillboardInstanceCount = 0;
         frameVisibleChunkCount = 0;
         frameTriangleCount = 0;
+        ResetBillboardFrameBatches();
 
         GeometryUtility.CalculateFrustumPlanes(targetCamera, frustumPlanes);
 
@@ -813,6 +1061,8 @@ public class CrowdController : MonoBehaviour
             frameVisibleChunkCount++;
             DrawChunk(chunk);
         }
+
+        FlushQueuedBillboards(billboardMesh);
 
         lastDrawCallCount = frameDrawCallCount;
         lastSetPassCount = frameSetPassCount;
@@ -830,7 +1080,7 @@ public class CrowdController : MonoBehaviour
         bool canUseBillboards = HasEnabledBillboards();
         if (ShouldForceBillboards() && canUseBillboards)
         {
-            DrawBillboardChunk(chunk, billboardMesh);
+            DrawBillboardChunk(chunk);
             return;
         }
 
@@ -858,7 +1108,7 @@ public class CrowdController : MonoBehaviour
             bool useBillboard = Vector3.Distance(targetCamera != null ? targetCamera.transform.position : Vector3.zero, chunk.bounds.center) >= billboardDistanceThreshold;
             if (useBillboard)
             {
-                DrawBillboardChunk(chunk, billboardMesh);
+                DrawBillboardChunk(chunk);
                 return;
             }
 
@@ -892,7 +1142,7 @@ public class CrowdController : MonoBehaviour
 
         if (chunkMinDistance >= bandEnd)
         {
-            DrawBillboardChunk(chunk, billboardMesh);
+            DrawBillboardChunk(chunk);
             return;
         }
 
@@ -915,7 +1165,7 @@ public class CrowdController : MonoBehaviour
             DrawMeshChunkTransition(chunk, meshLod, billboardDistanceThreshold, halfTransitionBand, cameraPosition);
         }
 
-        DrawBillboardChunkTransition(chunk, billboardMesh, billboardDistanceThreshold, halfTransitionBand, cameraPosition);
+        DrawBillboardChunkTransition(chunk, billboardDistanceThreshold, halfTransitionBand, cameraPosition);
     }
 
     private void DrawMeshChunkTransition(
@@ -997,91 +1247,28 @@ public class CrowdController : MonoBehaviour
 
     private void DrawBillboardChunkTransition(
         Chunk chunk,
-        Mesh drawMesh,
         float billboardDistanceThreshold,
         float halfTransitionBand,
         Vector3 cameraPosition)
     {
         bool useDedicatedBillboardMaterial = UsesDedicatedBillboardMaterial();
-        for (int variantIndex = 0; variantIndex < GetBillboardVariantCount(); variantIndex++)
+        for (int i = 0; i < chunk.instanceIndices.Count; i++)
         {
-            for (int seatedPass = 0; seatedPass < 2; seatedPass++)
+            int instanceIndex = chunk.instanceIndices[i];
+            InstanceState state = instances[instanceIndex];
+            Material passMaterial = ResolveBillboardMaterialForInstance(state, cameraPosition);
+            if (passMaterial == null)
             {
-                bool useSeatedBillboardPass = seatedPass == 1;
-                Material variantMaterial = ResolveBillboardMaterial(
-                    variantIndex,
-                    useSeatedBillboardPass ? PlaybackState.SeatedHold : PlaybackState.StandingHold,
-                    false);
-                Material sideVariantMaterial = ResolveBillboardMaterial(
-                    variantIndex,
-                    useSeatedBillboardPass ? PlaybackState.SeatedHold : PlaybackState.StandingHold,
-                    true);
-                if (variantMaterial == null)
-                {
-                    continue;
-                }
-
-                for (int sidePass = 0; sidePass < 2; sidePass++)
-                {
-                    bool useSideBillboardPass = sidePass == 1;
-                    Material passMaterial = useSideBillboardPass ? sideVariantMaterial : variantMaterial;
-                    if (passMaterial == null)
-                    {
-                        continue;
-                    }
-
-                    int countInBatch = 0;
-                    for (int i = 0; i < chunk.instanceIndices.Count; i++)
-                    {
-                        int instanceIndex = chunk.instanceIndices[i];
-                        InstanceState state = instances[instanceIndex];
-                        if (GetBillboardVariantIndex(state.outfitIndex) != variantIndex ||
-                            UsesSeatedBillboard(state.playbackState) != useSeatedBillboardPass ||
-                            UsesSideBillboard(state, cameraPosition) != useSideBillboardPass)
-                        {
-                            continue;
-                        }
-
-                        float billboardFade = ComputeBillboardBlend(state.matrix.GetColumn(3), cameraPosition, billboardDistanceThreshold, halfTransitionBand);
-                        if (billboardFade <= 0f)
-                        {
-                            continue;
-                        }
-
-                        matrixBatch[countInBatch] = CreateBillboardMatrix(state, cameraPosition);
-                        transitionFadeBatch[countInBatch] = billboardFade;
-                        if (!useDedicatedBillboardMaterial)
-                        {
-                            OutfitPreset outfit = outfits[Mathf.Clamp(state.outfitIndex, 0, outfits.Length - 1)];
-                            RuntimeClip runtimeClip = GetRuntimeClip(state.playbackState);
-                            colorRBatch[countInBatch] = outfit.colorR;
-                            colorGBatch[countInBatch] = outfit.colorG;
-                            colorBBatch[countInBatch] = outfit.colorB;
-                            colorABatch[countInBatch] = outfit.colorA;
-                            animDataBatch[countInBatch] = new Vector4(
-                                (float)runtimeClip,
-                                state.clipTime,
-                                ResolveRenderModeFlag(true),
-                                ResolveDebugModeFlag());
-                        }
-
-                        frameVisibleInstanceCount++;
-                        frameVisibleBillboardInstanceCount++;
-                        countInBatch++;
-
-                        if (countInBatch == maxInstancesPerBatch)
-                        {
-                            FlushBillboardBatch(drawMesh, passMaterial, countInBatch, useDedicatedBillboardMaterial);
-                            countInBatch = 0;
-                        }
-                    }
-
-                    if (countInBatch > 0)
-                    {
-                        FlushBillboardBatch(drawMesh, passMaterial, countInBatch, useDedicatedBillboardMaterial);
-                    }
-                }
+                continue;
             }
+
+            float billboardFade = ComputeBillboardBlend(state.matrix.GetColumn(3), cameraPosition, billboardDistanceThreshold, halfTransitionBand);
+            if (billboardFade <= 0f)
+            {
+                continue;
+            }
+
+            QueueBillboardInstance(passMaterial, useDedicatedBillboardMaterial, state, cameraPosition, billboardFade);
         }
     }
 
@@ -1212,83 +1399,21 @@ public class CrowdController : MonoBehaviour
         }
     }
 
-    private void DrawBillboardChunk(Chunk chunk, Mesh drawMesh)
+    private void DrawBillboardChunk(Chunk chunk)
     {
         Vector3 cameraPosition = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
         bool useDedicatedBillboardMaterial = UsesDedicatedBillboardMaterial();
-        for (int variantIndex = 0; variantIndex < GetBillboardVariantCount(); variantIndex++)
+        for (int i = 0; i < chunk.instanceIndices.Count; i++)
         {
-            for (int seatedPass = 0; seatedPass < 2; seatedPass++)
+            int instanceIndex = chunk.instanceIndices[i];
+            InstanceState state = instances[instanceIndex];
+            Material passMaterial = ResolveBillboardMaterialForInstance(state, cameraPosition);
+            if (passMaterial == null)
             {
-                bool useSeatedBillboardPass = seatedPass == 1;
-                Material variantMaterial = ResolveBillboardMaterial(
-                    variantIndex,
-                    useSeatedBillboardPass ? PlaybackState.SeatedHold : PlaybackState.StandingHold,
-                    false);
-                Material sideVariantMaterial = ResolveBillboardMaterial(
-                    variantIndex,
-                    useSeatedBillboardPass ? PlaybackState.SeatedHold : PlaybackState.StandingHold,
-                    true);
-                if (variantMaterial == null)
-                {
-                    continue;
-                }
-
-                for (int sidePass = 0; sidePass < 2; sidePass++)
-                {
-                    bool useSideBillboardPass = sidePass == 1;
-                    Material passMaterial = useSideBillboardPass ? sideVariantMaterial : variantMaterial;
-                    if (passMaterial == null)
-                    {
-                        continue;
-                    }
-
-                    int countInBatch = 0;
-                    for (int i = 0; i < chunk.instanceIndices.Count; i++)
-                    {
-                        int instanceIndex = chunk.instanceIndices[i];
-                        InstanceState state = instances[instanceIndex];
-                        if (GetBillboardVariantIndex(state.outfitIndex) != variantIndex ||
-                            UsesSeatedBillboard(state.playbackState) != useSeatedBillboardPass ||
-                            UsesSideBillboard(state, cameraPosition) != useSideBillboardPass)
-                        {
-                            continue;
-                        }
-
-                        matrixBatch[countInBatch] = CreateBillboardMatrix(state, cameraPosition);
-                        transitionFadeBatch[countInBatch] = 1f;
-                        if (!useDedicatedBillboardMaterial)
-                        {
-                            OutfitPreset outfit = outfits[Mathf.Clamp(state.outfitIndex, 0, outfits.Length - 1)];
-                            RuntimeClip runtimeClip = GetRuntimeClip(state.playbackState);
-                            colorRBatch[countInBatch] = outfit.colorR;
-                            colorGBatch[countInBatch] = outfit.colorG;
-                            colorBBatch[countInBatch] = outfit.colorB;
-                            colorABatch[countInBatch] = outfit.colorA;
-                            animDataBatch[countInBatch] = new Vector4(
-                                (float)runtimeClip,
-                                state.clipTime,
-                                ResolveRenderModeFlag(true),
-                                ResolveDebugModeFlag());
-                        }
-
-                        frameVisibleInstanceCount++;
-                        frameVisibleBillboardInstanceCount++;
-                        countInBatch++;
-
-                        if (countInBatch == maxInstancesPerBatch)
-                        {
-                            FlushBillboardBatch(drawMesh, passMaterial, countInBatch, useDedicatedBillboardMaterial);
-                            countInBatch = 0;
-                        }
-                    }
-
-                    if (countInBatch > 0)
-                    {
-                        FlushBillboardBatch(drawMesh, passMaterial, countInBatch, useDedicatedBillboardMaterial);
-                    }
-                }
+                continue;
             }
+
+            QueueBillboardInstance(passMaterial, useDedicatedBillboardMaterial, state, cameraPosition, 1f);
         }
     }
 
@@ -1502,6 +1627,22 @@ public class CrowdController : MonoBehaviour
         return fallbackMaterials[variantIndex];
     }
 
+    private Material ResolveBillboardMaterialForInstance(InstanceState state, Vector3 cameraPosition)
+    {
+        int variantIndex = GetBillboardVariantIndex(state.outfitIndex);
+        if (variantIndex < 0)
+        {
+            return null;
+        }
+
+        bool useSideView = UsesSideBillboard(state, cameraPosition);
+        PlaybackState billboardPlaybackState = UsesSeatedBillboard(state.playbackState)
+            ? PlaybackState.SeatedHold
+            : PlaybackState.StandingHold;
+
+        return ResolveBillboardMaterial(variantIndex, billboardPlaybackState, useSideView);
+    }
+
     private static bool UsesSeatedBillboard(PlaybackState playbackState)
     {
         return playbackState != PlaybackState.StandingHold;
@@ -1686,6 +1827,107 @@ public class CrowdController : MonoBehaviour
         };
     }
 
+    private void ResetBillboardFrameBatches()
+    {
+        for (int i = 0; i < activeBillboardBatchBuckets.Count; i++)
+        {
+            activeBillboardBatchBuckets[i].Clear();
+        }
+
+        activeBillboardBatchBuckets.Clear();
+    }
+
+    private void QueueBillboardInstance(
+        Material material,
+        bool useDedicatedBillboardMaterial,
+        InstanceState state,
+        Vector3 cameraPosition,
+        float transitionFade)
+    {
+        if (material == null)
+        {
+            return;
+        }
+
+        BillboardBatchBucket bucket = GetOrCreateBillboardBatchBucket(material, useDedicatedBillboardMaterial);
+        bucket.matrices.Add(CreateBillboardMatrix(state, cameraPosition));
+        bucket.transitionFades.Add(transitionFade);
+
+        if (!bucket.useDedicatedBillboardMaterial)
+        {
+            OutfitPreset outfit = outfits[Mathf.Clamp(state.outfitIndex, 0, outfits.Length - 1)];
+            RuntimeClip runtimeClip = GetRuntimeClip(state.playbackState);
+            bucket.colorRs.Add(outfit.colorR);
+            bucket.colorGs.Add(outfit.colorG);
+            bucket.colorBs.Add(outfit.colorB);
+            bucket.colorAs.Add(outfit.colorA);
+            bucket.animDatas.Add(new Vector4(
+                (float)runtimeClip,
+                state.clipTime,
+                ResolveRenderModeFlag(true),
+                ResolveDebugModeFlag()));
+        }
+
+        frameVisibleInstanceCount++;
+        frameVisibleBillboardInstanceCount++;
+    }
+
+    private BillboardBatchBucket GetOrCreateBillboardBatchBucket(Material material, bool useDedicatedBillboardMaterial)
+    {
+        if (!billboardBatchBuckets.TryGetValue(material, out BillboardBatchBucket bucket))
+        {
+            bucket = new BillboardBatchBucket
+            {
+                material = material,
+                useDedicatedBillboardMaterial = useDedicatedBillboardMaterial,
+            };
+            billboardBatchBuckets.Add(material, bucket);
+        }
+
+        if (!bucket.isActiveInFrame)
+        {
+            bucket.isActiveInFrame = true;
+            activeBillboardBatchBuckets.Add(bucket);
+        }
+
+        return bucket;
+    }
+
+    private void FlushQueuedBillboards(Mesh drawMesh)
+    {
+        if (drawMesh == null)
+        {
+            return;
+        }
+
+        for (int bucketIndex = 0; bucketIndex < activeBillboardBatchBuckets.Count; bucketIndex++)
+        {
+            BillboardBatchBucket bucket = activeBillboardBatchBuckets[bucketIndex];
+            int totalCount = bucket.matrices.Count;
+            for (int startIndex = 0; startIndex < totalCount; startIndex += maxInstancesPerBatch)
+            {
+                int count = Mathf.Min(maxInstancesPerBatch, totalCount - startIndex);
+                for (int i = 0; i < count; i++)
+                {
+                    int sourceIndex = startIndex + i;
+                    matrixBatch[i] = bucket.matrices[sourceIndex];
+                    transitionFadeBatch[i] = bucket.transitionFades[sourceIndex];
+
+                    if (!bucket.useDedicatedBillboardMaterial)
+                    {
+                        colorRBatch[i] = bucket.colorRs[sourceIndex];
+                        colorGBatch[i] = bucket.colorGs[sourceIndex];
+                        colorBBatch[i] = bucket.colorBs[sourceIndex];
+                        colorABatch[i] = bucket.colorAs[sourceIndex];
+                        animDataBatch[i] = bucket.animDatas[sourceIndex];
+                    }
+                }
+
+                FlushBillboardBatch(drawMesh, bucket.material, count, bucket.useDedicatedBillboardMaterial);
+            }
+        }
+    }
+
     private void FlushBatch(Mesh drawMesh, Material material, int count)
     {
         if (drawMesh == null || material == null || count <= 0 || matrixBatch == null)
@@ -1799,7 +2041,8 @@ public class CrowdController : MonoBehaviour
 
     private bool HasEnabledBillboards()
     {
-        return enableBillboards &&
+        return ResolveActiveDebugRenderMode() != DebugRenderMode.MeshesOnly &&
+            enableBillboards &&
             billboardMesh != null &&
             billboardStandingFrontMaterials != null &&
             billboardStandingFrontMaterials.Length > 0;
@@ -2029,6 +2272,10 @@ public class CrowdController : MonoBehaviour
         lodMeshes = null;
         instances = null;
         bakedClips = null;
+        billboardBatchBuckets.Clear();
+        activeBillboardBatchBuckets.Clear();
+        hasCrowdBounds = false;
+        crowdBounds = default;
         chunks.Clear();
     }
 
@@ -2039,18 +2286,57 @@ public class CrowdController : MonoBehaviour
             return;
         }
 
-        int instancesPerRow = ResolveInstancesPerRow();
-        int rowCount = ResolveRowCount(instancesPerRow);
-        float width = ResolveLayoutWidth(instancesPerRow);
-        float depth = ResolveCrowdDepth(rowCount);
-
         Gizmos.color = new Color(0.9f, 0.75f, 0.2f, 0.7f);
-        Gizmos.DrawWireCube(
-            transform.position + new Vector3(0f, ((rowCount - 1) * rowSpacingY + characterHeight) * 0.5f, depth * 0.5f),
-            new Vector3(width, (rowCount - 1) * rowSpacingY + characterHeight, depth));
+
+        if (hasCrowdBounds)
+        {
+            Gizmos.DrawWireCube(crowdBounds.center, crowdBounds.size);
+        }
+        else if (layoutMode == LayoutMode.SeatLayoutAsset && TryResolveSeatLayoutPreviewBounds(out Bounds previewBounds))
+        {
+            Gizmos.DrawWireCube(previewBounds.center, previewBounds.size);
+        }
+        else
+        {
+            int instancesPerRow = ResolveInstancesPerRow();
+            int rowCount = ResolveRowCount(instancesPerRow);
+            float width = ResolveLayoutWidth(instancesPerRow);
+            float depth = ResolveCrowdDepth(rowCount);
+
+            Gizmos.DrawWireCube(
+                transform.position + new Vector3(0f, ((rowCount - 1) * rowSpacingY + characterHeight) * 0.5f, depth * 0.5f),
+                new Vector3(width, (rowCount - 1) * rowSpacingY + characterHeight, depth));
+        }
+
+        DrawSeatLayoutDebugGizmos();
+        DrawSeatLayoutAlignmentGizmos();
 
         if (chunks.Count == 0)
         {
+            if (layoutMode == LayoutMode.SeatLayoutAsset && TryResolveSeatLayoutPreviewBounds(out Bounds previewBounds))
+            {
+                Vector3 min = previewBounds.min;
+                int previewChunkCountX = Mathf.Max(1, Mathf.CeilToInt(previewBounds.size.x / chunkSize.x));
+                int previewChunkCountZ = Mathf.Max(1, Mathf.CeilToInt(previewBounds.size.z / chunkSize.y));
+                for (int z = 0; z < previewChunkCountZ; z++)
+                {
+                    for (int x = 0; x < previewChunkCountX; x++)
+                    {
+                        Vector3 center = new(
+                            min.x + (x + 0.5f) * chunkSize.x,
+                            previewBounds.center.y,
+                            min.z + (z + 0.5f) * chunkSize.y);
+                        Gizmos.DrawWireCube(center, new Vector3(chunkSize.x, Mathf.Max(characterHeight, previewBounds.size.y), chunkSize.y));
+                    }
+                }
+
+                return;
+            }
+
+            int instancesPerRow = ResolveInstancesPerRow();
+            int rowCount = ResolveRowCount(instancesPerRow);
+            float width = ResolveLayoutWidth(instancesPerRow);
+            float depth = ResolveCrowdDepth(rowCount);
             int chunkCountX = Mathf.Max(1, Mathf.CeilToInt(width / chunkSize.x));
             int chunkCountZ = Mathf.Max(1, Mathf.CeilToInt(depth / chunkSize.y));
             for (int z = 0; z < chunkCountZ; z++)
@@ -2076,5 +2362,421 @@ public class CrowdController : MonoBehaviour
                 Gizmos.DrawWireCube(chunk.bounds.center, chunk.bounds.size);
             }
         }
+    }
+
+    private bool TryResolveSeatLayoutPreviewBounds(out Bounds previewBounds)
+    {
+        previewBounds = default;
+
+        if (layoutMode != LayoutMode.SeatLayoutAsset ||
+            !CrowdSeatLayoutUtility.TryParse(seatLayoutAsset, out CrowdSeatLayoutData layout, out _))
+        {
+            return false;
+        }
+
+        Vector3 min = new(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
+        Vector3 max = new(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity);
+        for (int i = 0; i < layout.seats.Length; i++)
+        {
+            Vector3 worldPosition = ResolveSeatLayoutWorldPosition(layout, layout.seats[i]);
+            min = Vector3.Min(min, worldPosition);
+            max = Vector3.Max(max, worldPosition);
+        }
+
+        if (layout.seats.Length == 0)
+        {
+            return false;
+        }
+
+        previewBounds = new Bounds((min + max) * 0.5f, Vector3.Max(max - min, new Vector3(0.1f, characterHeight, 0.1f)));
+        return true;
+    }
+
+    private void DrawSeatLayoutDebugGizmos()
+    {
+        if (!drawSeatLayoutDebugGizmos ||
+            layoutMode != LayoutMode.SeatLayoutAsset ||
+            !CrowdSeatLayoutUtility.TryParse(seatLayoutAsset, out CrowdSeatLayoutData layout, out _))
+        {
+            return;
+        }
+
+        int seatCount = layout.SeatCount;
+        if (seatCount <= 0)
+        {
+            return;
+        }
+
+        int stride = Mathf.Max(1, seatLayoutDebugStride);
+        if (seatCount > seatLayoutDebugMaxMarkers)
+        {
+            stride = Mathf.Max(stride, Mathf.CeilToInt(seatCount / (float)seatLayoutDebugMaxMarkers));
+        }
+
+        Color previousColor = Gizmos.color;
+        for (int i = 0; i < seatCount; i += stride)
+        {
+            CrowdSeatLayoutSeat seat = layout.seats[i];
+            Vector3 position = ResolveSeatLayoutWorldPosition(layout, seat);
+
+            Gizmos.color = seatLayoutDebugMarkerColor;
+            Gizmos.DrawCube(position, Vector3.one * seatLayoutDebugMarkerSize);
+
+            if (!drawSeatLayoutForwardGizmos)
+            {
+                continue;
+            }
+
+            Vector3 forward = seat.forward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 0.0001f)
+            {
+                continue;
+            }
+
+            Gizmos.color = seatLayoutDebugForwardColor;
+            Gizmos.DrawLine(position, position + forward.normalized * seatLayoutDebugForwardLength);
+        }
+
+        Gizmos.color = previousColor;
+    }
+
+    private void DrawSeatLayoutAlignmentGizmos()
+    {
+        if (!drawSeatLayoutAlignmentGizmos ||
+            layoutMode != LayoutMode.SeatLayoutAsset ||
+            !CrowdSeatLayoutUtility.TryParse(seatLayoutAsset, out CrowdSeatLayoutData layout, out _))
+        {
+            return;
+        }
+
+        if (TryResolveSeatLayoutSourceBounds(layout, out Bounds sourceBounds))
+        {
+            Gizmos.color = seatLayoutSourceBoundsColor;
+            Gizmos.DrawWireCube(sourceBounds.center, sourceBounds.size);
+            Gizmos.DrawSphere(sourceBounds.center, seatLayoutCenterMarkerSize * 0.5f);
+        }
+
+        if (!TryResolveReferenceBounds(out Bounds referenceBounds))
+        {
+            return;
+        }
+
+        Gizmos.color = seatLayoutReferenceBoundsColor;
+        Gizmos.DrawWireCube(referenceBounds.center, referenceBounds.size);
+        Gizmos.DrawSphere(referenceBounds.center, seatLayoutCenterMarkerSize * 0.5f);
+
+        if (TryResolveSeatLayoutSourceBounds(layout, out sourceBounds))
+        {
+            Gizmos.color = seatLayoutCenterDeltaColor;
+            Gizmos.DrawLine(referenceBounds.center, sourceBounds.center);
+        }
+    }
+
+    private bool TryResolveSeatLayoutSourceBounds(CrowdSeatLayoutData layout, out Bounds sourceBounds)
+    {
+        sourceBounds = default;
+        if (layout == null)
+        {
+            return false;
+        }
+
+        Vector3 size = layout.sourceBoundsSize;
+        if (size.sqrMagnitude <= 0.0001f)
+        {
+            size = layout.sourceBounds.max - layout.sourceBounds.min;
+        }
+
+        if (size.sqrMagnitude <= 0.0001f)
+        {
+            return false;
+        }
+
+        Vector3 center;
+        if (layout.positionsRelativeToSourceCenter)
+        {
+            center = transform.position + seatLayoutWorldOffset;
+        }
+        else
+        {
+            center = layout.sourceBoundsCenter;
+            if (center.sqrMagnitude <= 0.0001f)
+            {
+                center = (layout.sourceBounds.min + layout.sourceBounds.max) * 0.5f;
+            }
+
+            center += seatLayoutWorldOffset;
+        }
+
+        sourceBounds = new Bounds(center, size);
+        return true;
+    }
+
+    private bool TryResolveReferenceBounds(out Bounds referenceBounds)
+    {
+        referenceBounds = default;
+        if (seatLayoutReferenceObject == null)
+        {
+            return false;
+        }
+
+        Renderer[] renderers = seatLayoutReferenceObject.GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            if (renderers[i] == null)
+            {
+                continue;
+            }
+
+            if (referenceBounds.size == Vector3.zero)
+            {
+                referenceBounds = renderers[i].bounds;
+            }
+            else
+            {
+                referenceBounds.Encapsulate(renderers[i].bounds.min);
+                referenceBounds.Encapsulate(renderers[i].bounds.max);
+            }
+        }
+
+        return referenceBounds.size.sqrMagnitude > 0.0001f;
+    }
+
+    [ContextMenu("Log Seat Layout Diagnostics")]
+    private void LogSeatLayoutDiagnostics()
+    {
+        StringBuilder builder = new();
+        builder.AppendLine($"CrowdController diagnostics for '{name}'");
+        builder.AppendLine($"layoutMode: {layoutMode}");
+        builder.AppendLine($"transform.position: {transform.position}");
+        builder.AppendLine($"seatLayoutWorldOffset: {seatLayoutWorldOffset}");
+        builder.AppendLine($"seatLayoutLateralJitter: {seatLayoutLateralJitter:F3}");
+        builder.AppendLine($"activeDebugRenderMode: {ResolveActiveDebugRenderMode()}");
+        builder.AppendLine($"enableBillboards: {enableBillboards}");
+        builder.AppendLine($"activeBillboardDistance: {ResolveBillboardDistance():F3}");
+        builder.AppendLine($"chunkSize: {chunkSize}");
+
+        if (!CrowdSeatLayoutUtility.TryParse(seatLayoutAsset, out CrowdSeatLayoutData layout, out string parseError))
+        {
+            builder.AppendLine($"seatLayout parse: FAILED ({parseError})");
+            Debug.Log(builder.ToString(), this);
+            return;
+        }
+
+        builder.AppendLine($"seatLayout formatVersion: {layout.formatVersion}");
+        builder.AppendLine($"seatLayout layoutName: {layout.layoutName}");
+        builder.AppendLine($"seatLayout layoutType: {layout.layoutType}");
+        builder.AppendLine($"seatLayout sourceObjectName: {layout.sourceObjectName}");
+        builder.AppendLine($"seatLayout positionsRelativeToSourceCenter: {layout.positionsRelativeToSourceCenter}");
+        builder.AppendLine($"seatLayout sourceBounds.min: {layout.sourceBounds.min}");
+        builder.AppendLine($"seatLayout sourceBounds.max: {layout.sourceBounds.max}");
+        builder.AppendLine($"seatLayout sourceBoundsCenter: {layout.sourceBoundsCenter}");
+        builder.AppendLine($"seatLayout sourceBoundsSize: {layout.sourceBoundsSize}");
+        builder.AppendLine($"seatLayout aisleConfig.aisleCount: {layout.aisleConfig.aisleCount}");
+        builder.AppendLine($"seatLayout aisleConfig.aisleWidth: {layout.aisleConfig.aisleWidth:F3}");
+        builder.AppendLine($"seatLayout aisleConfig.cornerSegments: {layout.aisleConfig.cornerSegments}");
+        builder.AppendLine($"seatLayout aisleConfig.cornerAislesExcluded: {layout.aisleConfig.cornerAislesExcluded}");
+        builder.AppendLine($"seatLayout aisleConfig.sectionsAreExplicit: {layout.aisleConfig.sectionsAreExplicit}");
+        builder.AppendLine($"seatLayout rowSectionCount: {layout.RowSectionCount}");
+        builder.AppendLine($"seatLayout seatCount: {layout.SeatCount}");
+
+        if (TryResolveSeatLayoutSourceBounds(layout, out Bounds sourceBounds))
+        {
+            builder.AppendLine($"resolved sourceBounds.center: {sourceBounds.center}");
+            builder.AppendLine($"resolved sourceBounds.size: {sourceBounds.size}");
+        }
+        else
+        {
+            builder.AppendLine("resolved sourceBounds: <unavailable>");
+        }
+
+        if (TryResolveReferenceBounds(out Bounds referenceBounds))
+        {
+            builder.AppendLine($"referenceObject: {seatLayoutReferenceObject.name}");
+            builder.AppendLine($"referenceBounds.center: {referenceBounds.center}");
+            builder.AppendLine($"referenceBounds.size: {referenceBounds.size}");
+
+            if (TryResolveSeatLayoutSourceBounds(layout, out sourceBounds))
+            {
+                Vector3 centerDelta = sourceBounds.center - referenceBounds.center;
+                Vector3 sizeDelta = sourceBounds.size - referenceBounds.size;
+                builder.AppendLine($"centerDelta(source-reference): {centerDelta}");
+                builder.AppendLine($"sizeDelta(source-reference): {sizeDelta}");
+            }
+        }
+        else
+        {
+            builder.AppendLine("referenceBounds: <unavailable>");
+        }
+
+        if (TryResolveSeatLayoutPreviewBounds(out Bounds previewBounds))
+        {
+            builder.AppendLine($"resolved seatPreviewBounds.center: {previewBounds.center}");
+            builder.AppendLine($"resolved seatPreviewBounds.size: {previewBounds.size}");
+        }
+
+        if (hasCrowdBounds)
+        {
+            builder.AppendLine($"runtime crowdBounds.center: {crowdBounds.center}");
+            builder.AppendLine($"runtime crowdBounds.size: {crowdBounds.size}");
+        }
+
+        if (layout.seats != null && layout.seats.Length > 0)
+        {
+            int[] sampleIndices =
+            {
+                0,
+                Mathf.Clamp(layout.seats.Length / 2, 0, layout.seats.Length - 1),
+                layout.seats.Length - 1,
+            };
+
+            for (int i = 0; i < sampleIndices.Length; i++)
+            {
+                int sampleIndex = sampleIndices[i];
+                CrowdSeatLayoutSeat seat = layout.seats[sampleIndex];
+                Vector3 resolvedPosition = ResolveSeatLayoutWorldPosition(layout, seat);
+                builder.AppendLine(
+                    $"seat[{sampleIndex}] rawPos={seat.position} resolvedPos={resolvedPosition} forward={seat.forward} block={seat.blockIndex} floor={seat.floorIndex} row={seat.rowIndex} section={seat.sectionIndex} loopSection={seat.loopSectionIndex} kind={seat.sectionKind} side={seat.sideIndex} corner={seat.cornerIndex} seat={seat.seatIndex} localT={seat.sectionLocalT:F3} span=({seat.sectionLocalT0:F3},{seat.sectionLocalT1:F3}) rowHeight={seat.rowHeight:F3} seatSurfaceHeight={seat.seatSurfaceHeight:F3} anchorHeight={seat.anchorHeight:F3}");
+            }
+        }
+
+        if (instances != null && instances.Length > 0)
+        {
+            int[] runtimeSampleIndices =
+            {
+                0,
+                Mathf.Clamp(instances.Length / 2, 0, instances.Length - 1),
+                instances.Length - 1,
+            };
+
+            for (int i = 0; i < runtimeSampleIndices.Length; i++)
+            {
+                int sampleIndex = runtimeSampleIndices[i];
+                Vector3 runtimePosition = instances[sampleIndex].matrix.GetColumn(3);
+                builder.AppendLine($"instance[{sampleIndex}] runtimePos={runtimePosition}");
+            }
+        }
+
+        builder.AppendLine($"lastVisibleChunkCount: {lastVisibleChunkCount}");
+        builder.AppendLine($"lastVisibleInstanceCount: {lastVisibleInstanceCount}");
+        builder.AppendLine($"lastVisibleMeshInstanceCount: {lastVisibleMeshInstanceCount}");
+        builder.AppendLine($"lastVisibleBillboardInstanceCount: {lastVisibleBillboardInstanceCount}");
+
+        Debug.Log(builder.ToString(), this);
+    }
+
+    [ContextMenu("Log Seat Layout Section Diagnostics")]
+    private void LogSeatLayoutSectionDiagnostics()
+    {
+        StringBuilder builder = new();
+        builder.AppendLine($"CrowdController section diagnostics for '{name}'");
+        builder.AppendLine($"transform.position: {transform.position}");
+        builder.AppendLine($"seatLayoutWorldOffset: {seatLayoutWorldOffset}");
+        builder.AppendLine($"seatLayoutLateralJitter: {seatLayoutLateralJitter:F3}");
+
+        if (!CrowdSeatLayoutUtility.TryParse(seatLayoutAsset, out CrowdSeatLayoutData layout, out string parseError))
+        {
+            builder.AppendLine($"seatLayout parse: FAILED ({parseError})");
+            Debug.Log(builder.ToString(), this);
+            return;
+        }
+
+        builder.AppendLine($"layoutName: {layout.layoutName}");
+        builder.AppendLine($"rowSectionCount: {layout.RowSectionCount}");
+        builder.AppendLine($"seatCount: {layout.SeatCount}");
+        builder.AppendLine($"aisleCount: {layout.aisleConfig.aisleCount}");
+        builder.AppendLine($"aisleWidth: {layout.aisleConfig.aisleWidth:F3}");
+
+        if (TryResolveReferenceBounds(out Bounds referenceBounds))
+        {
+            builder.AppendLine($"referenceObject: {seatLayoutReferenceObject.name}");
+            builder.AppendLine($"referenceBounds.center: {referenceBounds.center}");
+            builder.AppendLine($"referenceBounds.size: {referenceBounds.size}");
+        }
+        else
+        {
+            builder.AppendLine("referenceBounds: <unavailable>");
+        }
+
+        if (layout.rowSections == null || layout.rowSections.Length == 0)
+        {
+            builder.AppendLine("rowSections: <none>");
+            Debug.Log(builder.ToString(), this);
+            return;
+        }
+
+        int[] sampleIndices =
+        {
+            0,
+            Mathf.Clamp(layout.rowSections.Length / 2, 0, layout.rowSections.Length - 1),
+            layout.rowSections.Length - 1,
+        };
+
+        for (int i = 0; i < sampleIndices.Length; i++)
+        {
+            int sectionSampleIndex = sampleIndices[i];
+            CrowdSeatLayoutRowSection rowSection = layout.rowSections[sectionSampleIndex];
+            Vector3 worldStart = ResolveSeatLayoutWorldPoint(layout, rowSection.centerStart);
+            Vector3 worldEnd = ResolveSeatLayoutWorldPoint(layout, rowSection.centerEnd);
+            Vector3 worldMid = ResolveSeatLayoutWorldPoint(layout, rowSection.centerMid);
+            float spanWidth = Vector3.Distance(worldStart, worldEnd);
+
+            builder.AppendLine(
+                $"rowSection[{sectionSampleIndex}] block={rowSection.blockIndex} row={rowSection.rowIndex} section={rowSection.sectionIndex} loopSection={rowSection.loopSectionIndex} kind={rowSection.sectionKind} side={rowSection.sideIndex} corner={rowSection.cornerIndex} seats={rowSection.seatCount} localSpan=({rowSection.localT0:F3},{rowSection.localT1:F3}) spanWidth={spanWidth:F3}");
+            builder.AppendLine(
+                $"rowSection[{sectionSampleIndex}] worldStart={worldStart} worldMid={worldMid} worldEnd={worldEnd}");
+
+            int matchedSeatCount = 0;
+            int firstSeatIndex = -1;
+            int lastSeatIndex = -1;
+            Vector3 seatMin = new(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
+            Vector3 seatMax = new(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity);
+            Vector3 seatSum = Vector3.zero;
+
+            for (int seatIndex = 0; seatIndex < layout.seats.Length; seatIndex++)
+            {
+                CrowdSeatLayoutSeat seat = layout.seats[seatIndex];
+                if (seat.blockIndex != rowSection.blockIndex ||
+                    seat.rowIndex != rowSection.rowIndex ||
+                    seat.sectionIndex != rowSection.sectionIndex)
+                {
+                    continue;
+                }
+
+                Vector3 worldSeatPosition = ResolveSeatLayoutWorldPosition(layout, seat);
+                if (firstSeatIndex < 0)
+                {
+                    firstSeatIndex = seatIndex;
+                }
+
+                lastSeatIndex = seatIndex;
+                matchedSeatCount++;
+                seatSum += worldSeatPosition;
+                seatMin = Vector3.Min(seatMin, worldSeatPosition);
+                seatMax = Vector3.Max(seatMax, worldSeatPosition);
+            }
+
+            if (matchedSeatCount == 0)
+            {
+                builder.AppendLine($"rowSection[{sectionSampleIndex}] matchedSeats=0");
+                continue;
+            }
+
+            Vector3 averageSeatPosition = seatSum / matchedSeatCount;
+            Vector3 averageDelta = averageSeatPosition - worldMid;
+            builder.AppendLine(
+                $"rowSection[{sectionSampleIndex}] matchedSeats={matchedSeatCount} firstSeatIndex={firstSeatIndex} lastSeatIndex={lastSeatIndex} avgSeatPos={averageSeatPosition} avgDeltaFromMid={averageDelta}");
+            builder.AppendLine(
+                $"rowSection[{sectionSampleIndex}] seatBounds.min={seatMin} seatBounds.max={seatMax}");
+
+            CrowdSeatLayoutSeat firstSeat = layout.seats[firstSeatIndex];
+            CrowdSeatLayoutSeat lastSeat = layout.seats[lastSeatIndex];
+            Vector3 firstSeatWorld = ResolveSeatLayoutWorldPosition(layout, firstSeat);
+            Vector3 lastSeatWorld = ResolveSeatLayoutWorldPosition(layout, lastSeat);
+            builder.AppendLine(
+                $"rowSection[{sectionSampleIndex}] firstSeatWorld={firstSeatWorld} lastSeatWorld={lastSeatWorld}");
+        }
+
+        Debug.Log(builder.ToString(), this);
     }
 }
