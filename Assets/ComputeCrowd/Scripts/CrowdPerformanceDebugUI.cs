@@ -331,6 +331,12 @@ public class CrowdPerformanceDebugUI : MonoBehaviour
                 builder.AppendLine($"controller[{i}].drawCalls: {controller.LastDrawCallCount}");
                 builder.AppendLine($"controller[{i}].setPass: {controller.LastSetPassCount}");
                 builder.AppendLine($"controller[{i}].triangles: {controller.LastTriangleCount}");
+                builder.AppendLine($"controller[{i}].cpu.animationMs: {controller.LastAnimationUpdateCpuMs:0.###}");
+                builder.AppendLine($"controller[{i}].cpu.renderMs: {controller.LastRenderCrowdCpuMs:0.###}");
+                builder.AppendLine($"controller[{i}].cpu.chunkTraversalMs: {controller.LastVisibleChunkTraversalCpuMs:0.###}");
+                builder.AppendLine($"controller[{i}].cpu.billboardQueueMs: {controller.LastBillboardQueueCpuMs:0.###}");
+                builder.AppendLine($"controller[{i}].cpu.billboardFlushMs: {controller.LastBillboardFlushCpuMs:0.###}");
+                builder.AppendLine($"controller[{i}].billboardBucketCount: {controller.LastBillboardBucketCount}");
                 builder.AppendLine($"controller[{i}].hasBillboardMesh: {controller.HasBillboardMesh}");
                 builder.AppendLine($"controller[{i}].billboardMaterials: {controller.BillboardMaterialCount}");
                 builder.AppendLine($"controller[{i}].usesDedicatedBillboardShader: {controller.UsesDedicatedBillboardShader}");

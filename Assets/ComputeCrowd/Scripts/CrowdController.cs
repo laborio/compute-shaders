@@ -26,6 +26,9 @@ public class CrowdController : MonoBehaviour
     private static readonly int ColorAId = Shader.PropertyToID("_ColorA");
     private static readonly int AnimDataId = Shader.PropertyToID("_AnimData");
     private static readonly int TransitionFadeId = Shader.PropertyToID("_TransitionFade");
+    private static readonly int BillboardScaleId = Shader.PropertyToID("_BillboardScale");
+    private static readonly int BillboardDepthOffsetId = Shader.PropertyToID("_BillboardDepthOffset");
+    private static readonly int BillboardHeightOffsetId = Shader.PropertyToID("_BillboardHeightOffset");
     private static readonly int FallbackTransitionFadeId = Shader.PropertyToID("_FallbackTransitionFade");
     private static readonly int FallbackColorRId = Shader.PropertyToID("_FallbackColorR");
     private static readonly int FallbackColorGId = Shader.PropertyToID("_FallbackColorG");
@@ -105,6 +108,7 @@ public class CrowdController : MonoBehaviour
         public bool isActiveInFrame;
         public readonly List<Matrix4x4> matrices = new();
         public readonly List<float> transitionFades = new();
+        public readonly List<float> heightOffsets = new();
         public readonly List<Vector4> colorRs = new();
         public readonly List<Vector4> colorGs = new();
         public readonly List<Vector4> colorBs = new();
@@ -116,6 +120,7 @@ public class CrowdController : MonoBehaviour
             isActiveInFrame = false;
             matrices.Clear();
             transitionFades.Clear();
+            heightOffsets.Clear();
             colorRs.Clear();
             colorGs.Clear();
             colorBs.Clear();
@@ -270,6 +275,12 @@ public class CrowdController : MonoBehaviour
     private int lastVisibleBillboardInstanceCount;
     private int lastVisibleChunkCount;
     private long lastTriangleCount;
+    private float lastAnimationUpdateCpuMs;
+    private float lastRenderCrowdCpuMs;
+    private float lastVisibleChunkTraversalCpuMs;
+    private float lastBillboardQueueCpuMs;
+    private float lastBillboardFlushCpuMs;
+    private int lastBillboardBucketCount;
     private int maxInstancesPerBatch;
     private Matrix4x4[] matrixBatch;
     private Vector4[] colorRBatch;
@@ -278,6 +289,9 @@ public class CrowdController : MonoBehaviour
     private Vector4[] colorABatch;
     private Vector4[] animDataBatch;
     private float[] transitionFadeBatch;
+    private float[] billboardHeightOffsetBatch;
+    private long frameBillboardQueueTicks;
+    private long frameBillboardFlushTicks;
 
     public int LastDrawCallCount => lastDrawCallCount;
     public int LastSetPassCount => lastSetPassCount;
@@ -286,6 +300,12 @@ public class CrowdController : MonoBehaviour
     public int LastVisibleBillboardInstanceCount => lastVisibleBillboardInstanceCount;
     public int LastVisibleChunkCount => lastVisibleChunkCount;
     public long LastTriangleCount => lastTriangleCount;
+    public float LastAnimationUpdateCpuMs => lastAnimationUpdateCpuMs;
+    public float LastRenderCrowdCpuMs => lastRenderCrowdCpuMs;
+    public float LastVisibleChunkTraversalCpuMs => lastVisibleChunkTraversalCpuMs;
+    public float LastBillboardQueueCpuMs => lastBillboardQueueCpuMs;
+    public float LastBillboardFlushCpuMs => lastBillboardFlushCpuMs;
+    public int LastBillboardBucketCount => lastBillboardBucketCount;
     public int LastShadowCasterCount => 0;
     public string ActiveDebugRenderModeName => ResolveActiveDebugRenderMode().ToString();
     public bool IsWebGLBillboardFallbackActive =>
@@ -327,8 +347,13 @@ public class CrowdController : MonoBehaviour
             return;
         }
 
+        long animationStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
         UpdateInstanceAnimation(Time.deltaTime);
+        lastAnimationUpdateCpuMs = ConvertTicksToMilliseconds(System.Diagnostics.Stopwatch.GetTimestamp() - animationStartTicks);
+
+        long renderStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
         RenderCrowd();
+        lastRenderCrowdCpuMs = ConvertTicksToMilliseconds(System.Diagnostics.Stopwatch.GetTimestamp() - renderStartTicks);
     }
 
     private void OnDisable()
@@ -1047,10 +1072,13 @@ public class CrowdController : MonoBehaviour
         frameVisibleBillboardInstanceCount = 0;
         frameVisibleChunkCount = 0;
         frameTriangleCount = 0;
+        frameBillboardQueueTicks = 0;
+        frameBillboardFlushTicks = 0;
         ResetBillboardFrameBatches();
 
         GeometryUtility.CalculateFrustumPlanes(targetCamera, frustumPlanes);
 
+        long chunkTraversalStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
         foreach (Chunk chunk in chunks)
         {
             if (!chunk.hasBounds || !GeometryUtility.TestPlanesAABB(frustumPlanes, chunk.bounds))
@@ -1061,8 +1089,14 @@ public class CrowdController : MonoBehaviour
             frameVisibleChunkCount++;
             DrawChunk(chunk);
         }
+        lastVisibleChunkTraversalCpuMs = ConvertTicksToMilliseconds(System.Diagnostics.Stopwatch.GetTimestamp() - chunkTraversalStartTicks);
 
+        long billboardFlushStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
         FlushQueuedBillboards(billboardMesh);
+        frameBillboardFlushTicks += System.Diagnostics.Stopwatch.GetTimestamp() - billboardFlushStartTicks;
+        lastBillboardQueueCpuMs = ConvertTicksToMilliseconds(frameBillboardQueueTicks);
+        lastBillboardFlushCpuMs = ConvertTicksToMilliseconds(frameBillboardFlushTicks);
+        lastBillboardBucketCount = activeBillboardBatchBuckets.Count;
 
         lastDrawCallCount = frameDrawCallCount;
         lastSetPassCount = frameSetPassCount;
@@ -1251,6 +1285,7 @@ public class CrowdController : MonoBehaviour
         float halfTransitionBand,
         Vector3 cameraPosition)
     {
+        long queueStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
         bool useDedicatedBillboardMaterial = UsesDedicatedBillboardMaterial();
         for (int i = 0; i < chunk.instanceIndices.Count; i++)
         {
@@ -1270,6 +1305,8 @@ public class CrowdController : MonoBehaviour
 
             QueueBillboardInstance(passMaterial, useDedicatedBillboardMaterial, state, cameraPosition, billboardFade);
         }
+
+        frameBillboardQueueTicks += System.Diagnostics.Stopwatch.GetTimestamp() - queueStartTicks;
     }
 
     private float ComputeBillboardBlend(Vector3 position, Vector3 cameraPosition, float billboardDistanceThreshold, float halfTransitionBand)
@@ -1401,6 +1438,7 @@ public class CrowdController : MonoBehaviour
 
     private void DrawBillboardChunk(Chunk chunk)
     {
+        long queueStartTicks = System.Diagnostics.Stopwatch.GetTimestamp();
         Vector3 cameraPosition = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
         bool useDedicatedBillboardMaterial = UsesDedicatedBillboardMaterial();
         for (int i = 0; i < chunk.instanceIndices.Count; i++)
@@ -1415,6 +1453,8 @@ public class CrowdController : MonoBehaviour
 
             QueueBillboardInstance(passMaterial, useDedicatedBillboardMaterial, state, cameraPosition, 1f);
         }
+
+        frameBillboardQueueTicks += System.Diagnostics.Stopwatch.GetTimestamp() - queueStartTicks;
     }
 
     private Mesh SelectLodMesh(Chunk chunk, out bool useBillboard)
@@ -1565,6 +1605,8 @@ public class CrowdController : MonoBehaviour
             if (useDedicatedBillboardMaterial)
             {
                 material.SetTexture(BaseMapId, variant);
+                material.SetFloat(BillboardScaleId, billboardScale);
+                material.SetFloat(BillboardDepthOffsetId, billboardDepthOffset);
             }
             else
             {
@@ -1827,6 +1869,11 @@ public class CrowdController : MonoBehaviour
         };
     }
 
+    private static float ConvertTicksToMilliseconds(long ticks)
+    {
+        return (float)(ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
+    }
+
     private void ResetBillboardFrameBatches()
     {
         for (int i = 0; i < activeBillboardBatchBuckets.Count; i++)
@@ -1850,8 +1897,12 @@ public class CrowdController : MonoBehaviour
         }
 
         BillboardBatchBucket bucket = GetOrCreateBillboardBatchBucket(material, useDedicatedBillboardMaterial);
-        bucket.matrices.Add(CreateBillboardMatrix(state, cameraPosition));
+        bucket.matrices.Add(bucket.useDedicatedBillboardMaterial ? state.matrix : CreateBillboardMatrix(state, cameraPosition));
         bucket.transitionFades.Add(transitionFade);
+        if (bucket.useDedicatedBillboardMaterial)
+        {
+            bucket.heightOffsets.Add(ComputeBillboardHeightOffset(state));
+        }
 
         if (!bucket.useDedicatedBillboardMaterial)
         {
@@ -1913,7 +1964,11 @@ public class CrowdController : MonoBehaviour
                     matrixBatch[i] = bucket.matrices[sourceIndex];
                     transitionFadeBatch[i] = bucket.transitionFades[sourceIndex];
 
-                    if (!bucket.useDedicatedBillboardMaterial)
+                    if (bucket.useDedicatedBillboardMaterial)
+                    {
+                        billboardHeightOffsetBatch[i] = bucket.heightOffsets[sourceIndex];
+                    }
+                    else
                     {
                         colorRBatch[i] = bucket.colorRs[sourceIndex];
                         colorGBatch[i] = bucket.colorGs[sourceIndex];
@@ -1978,6 +2033,7 @@ public class CrowdController : MonoBehaviour
 
         materialPropertyBlock.Clear();
         SetExactFloatArray(TransitionFadeId, transitionFadeBatch, count);
+        SetExactFloatArray(BillboardHeightOffsetId, billboardHeightOffsetBatch, count);
         Graphics.DrawMeshInstanced(
             drawMesh,
             0,
@@ -2095,6 +2151,7 @@ public class CrowdController : MonoBehaviour
         colorABatch = new Vector4[maxInstancesPerBatch];
         animDataBatch = new Vector4[maxInstancesPerBatch];
         transitionFadeBatch = new float[maxInstancesPerBatch];
+        billboardHeightOffsetBatch = new float[maxInstancesPerBatch];
     }
 
     private void SetExactVectorArray(int propertyId, Vector4[] source, int count)
