@@ -169,6 +169,10 @@ public class CrowdController : MonoBehaviour
     [SerializeField] private float rowSpacingZ = 1f;
     [SerializeField] private float rowJitterX = 0.18f;
     [SerializeField] private float rowJitterY = 0.06f;
+    [SerializeField] private bool useScreenSizeLod = true;
+    [SerializeField, Range(0.001f, 1f)] private float lod1ScreenRelativeHeight = 0.12f;
+    [SerializeField, Range(0.001f, 1f)] private float lod2ScreenRelativeHeight = 0.06f;
+    [SerializeField, Range(0.001f, 1f)] private float lod3ScreenRelativeHeight = 0.03f;
     [SerializeField] private float lod1Distance = 18f;
     [SerializeField] private float lod2Distance = 32f;
     [SerializeField] private float lod3Distance = 40f;
@@ -378,6 +382,9 @@ public class CrowdController : MonoBehaviour
         rowSpacingZ = Mathf.Max(0.1f, rowSpacingZ);
         rowJitterX = Mathf.Max(0f, rowJitterX);
         rowJitterY = Mathf.Max(0f, rowJitterY);
+        lod1ScreenRelativeHeight = Mathf.Clamp(lod1ScreenRelativeHeight, 0.001f, 1f);
+        lod2ScreenRelativeHeight = Mathf.Clamp(lod2ScreenRelativeHeight, 0.001f, lod1ScreenRelativeHeight);
+        lod3ScreenRelativeHeight = Mathf.Clamp(lod3ScreenRelativeHeight, 0.001f, lod2ScreenRelativeHeight);
         lod1Distance = Mathf.Max(0.1f, lod1Distance);
         lod2Distance = Mathf.Max(lod1Distance, lod2Distance);
         lod3Distance = Mathf.Max(lod2Distance, lod3Distance);
@@ -1340,15 +1347,13 @@ public class CrowdController : MonoBehaviour
             return nearestEnabledLod >= 0 ? lodMeshes[nearestEnabledLod] : null;
         }
 
-        float distance = Vector3.Distance(Camera.main.transform.position, chunk.bounds.center);
-        return SelectMeshLodForDistance(distance);
+        Camera targetCamera = Camera.main;
+        float distance = Vector3.Distance(targetCamera.transform.position, chunk.bounds.center);
+        return SelectMeshLod(chunk.bounds, targetCamera, distance);
     }
 
     private Mesh SelectMeshLodForDistance(float distance)
     {
-        float activeLod1Distance = ResolveLod1Distance();
-        float activeLod2Distance = ResolveLod2Distance();
-        float activeLod3Distance = ResolveLod3Distance();
         bool skipLod0OnWebGL = ShouldSkipLod0OnWebGL();
 
         if (lodMeshes == null || lodMeshes.Length == 0)
@@ -1356,28 +1361,8 @@ public class CrowdController : MonoBehaviour
             return crowdMesh;
         }
 
-        if (distance >= activeLod3Distance && IsMeshLodEnabled(3))
-        {
-            return lodMeshes[3];
-        }
-
-        if (distance >= activeLod2Distance && IsMeshLodEnabled(2))
-        {
-            return lodMeshes[2];
-        }
-
-        if (skipLod0OnWebGL && IsMeshLodEnabled(1))
-        {
-            return lodMeshes[1];
-        }
-
-        if (distance >= activeLod1Distance && IsMeshLodEnabled(1))
-        {
-            return lodMeshes[1];
-        }
-
-        int nearestEnabledLod = FindNearestEnabledMeshLodIndex();
-        return nearestEnabledLod >= 0 ? lodMeshes[nearestEnabledLod] : null;
+        int minimumLodIndex = DetermineMinimumMeshLodIndexForDistance(distance, skipLod0OnWebGL);
+        return SelectMeshForMinimumLodIndex(minimumLodIndex);
     }
 
     private void DrawMeshChunk(Chunk chunk, Mesh drawMesh)
@@ -1460,10 +1445,7 @@ public class CrowdController : MonoBehaviour
     private Mesh SelectLodMesh(Chunk chunk, out bool useBillboard)
     {
         useBillboard = false;
-        float activeLod1Distance = ResolveLod1Distance();
-        float activeLod2Distance = ResolveLod2Distance();
         float activeBillboardDistance = ResolveBillboardDistance();
-        bool skipLod0OnWebGL = ShouldSkipLod0OnWebGL();
 
         if (ShouldForceBillboards())
         {
@@ -1487,35 +1469,126 @@ public class CrowdController : MonoBehaviour
             return fallbackLodIndex >= 0 ? lodMeshes[fallbackLodIndex] : crowdMesh;
         }
 
-        float distance = Vector3.Distance(Camera.main.transform.position, chunk.bounds.center);
+        Camera targetCamera = Camera.main;
+        float distance = Vector3.Distance(targetCamera.transform.position, chunk.bounds.center);
         if (HasEnabledBillboards() && distance >= activeBillboardDistance)
         {
             useBillboard = true;
             return billboardMesh;
         }
 
-        if (distance >= ResolveLod3Distance() && IsMeshLodEnabled(3))
+        return SelectMeshLod(chunk.bounds, targetCamera, distance);
+    }
+
+    private Mesh SelectMeshLod(Bounds chunkBounds, Camera targetCamera, float distance)
+    {
+        if (lodMeshes == null || lodMeshes.Length == 0)
         {
-            return lodMeshes[3];
+            return crowdMesh;
         }
 
-        if (distance >= activeLod2Distance && IsMeshLodEnabled(2))
+        bool skipLod0OnWebGL = ShouldSkipLod0OnWebGL();
+        int minimumLodIndex = DetermineMinimumMeshLodIndexForDistance(distance, skipLod0OnWebGL);
+        if (!useScreenSizeLod)
         {
-            return lodMeshes[2];
+            return SelectMeshForMinimumLodIndex(minimumLodIndex);
         }
 
-        if (skipLod0OnWebGL && IsMeshLodEnabled(1))
+        float screenRelativeHeight = ComputeChunkScreenRelativeHeight(chunkBounds, targetCamera);
+        int screenLodIndex = DetermineMinimumMeshLodIndexForScreenHeight(screenRelativeHeight, skipLod0OnWebGL);
+        return SelectMeshForMinimumLodIndex(Mathf.Max(minimumLodIndex, screenLodIndex));
+    }
+
+    private int DetermineMinimumMeshLodIndexForDistance(float distance, bool skipLod0OnWebGL)
+    {
+        if (distance >= ResolveLod3Distance())
         {
-            return lodMeshes[1];
+            return 3;
         }
 
-        if (distance >= activeLod1Distance && IsMeshLodEnabled(1))
+        if (distance >= ResolveLod2Distance())
         {
-            return lodMeshes[1];
+            return 2;
+        }
+
+        if (skipLod0OnWebGL || distance >= ResolveLod1Distance())
+        {
+            return 1;
+        }
+
+        return 0;
+    }
+
+    private int DetermineMinimumMeshLodIndexForScreenHeight(float screenRelativeHeight, bool skipLod0OnWebGL)
+    {
+        if (screenRelativeHeight <= lod3ScreenRelativeHeight)
+        {
+            return 3;
+        }
+
+        if (screenRelativeHeight <= lod2ScreenRelativeHeight)
+        {
+            return 2;
+        }
+
+        if (skipLod0OnWebGL || screenRelativeHeight <= lod1ScreenRelativeHeight)
+        {
+            return 1;
+        }
+
+        return 0;
+    }
+
+    private Mesh SelectMeshForMinimumLodIndex(int minimumLodIndex)
+    {
+        for (int lodIndex = Mathf.Clamp(minimumLodIndex, 0, lodMeshes.Length - 1); lodIndex < lodMeshes.Length; lodIndex++)
+        {
+            if (IsMeshLodEnabled(lodIndex))
+            {
+                return lodMeshes[lodIndex];
+            }
+        }
+
+        for (int lodIndex = Mathf.Clamp(minimumLodIndex, 0, lodMeshes.Length - 1) - 1; lodIndex >= 0; lodIndex--)
+        {
+            if (IsMeshLodEnabled(lodIndex))
+            {
+                return lodMeshes[lodIndex];
+            }
         }
 
         int nearestEnabledLod = FindNearestEnabledMeshLodIndex();
-        return nearestEnabledLod >= 0 ? lodMeshes[nearestEnabledLod] : crowdMesh;
+        return nearestEnabledLod >= 0 ? lodMeshes[nearestEnabledLod] : null;
+    }
+
+    private float ComputeChunkScreenRelativeHeight(Bounds chunkBounds, Camera targetCamera)
+    {
+        if (targetCamera == null)
+        {
+            return 1f;
+        }
+
+        float referenceHeight = Mathf.Max(chunkBounds.size.y, characterHeight * characterScale);
+        if (targetCamera.orthographic)
+        {
+            return referenceHeight / (2f * targetCamera.orthographicSize);
+        }
+
+        Vector3 toCenter = chunkBounds.center - targetCamera.transform.position;
+        float depth = Vector3.Dot(toCenter, targetCamera.transform.forward);
+        if (depth <= 0.01f)
+        {
+            return 1f;
+        }
+
+        float halfFovRadians = targetCamera.fieldOfView * 0.5f * Mathf.Deg2Rad;
+        float frustumHeightAtDepth = 2f * depth * Mathf.Tan(halfFovRadians);
+        if (frustumHeightAtDepth <= 0.0001f)
+        {
+            return 1f;
+        }
+
+        return referenceHeight / frustumHeightAtDepth;
     }
 
     private Matrix4x4 CreateBillboardMatrix(InstanceState state, Vector3 cameraPosition)
@@ -2610,6 +2683,8 @@ public class CrowdController : MonoBehaviour
         builder.AppendLine($"seatLayoutLateralJitter: {seatLayoutLateralJitter:F3}");
         builder.AppendLine($"activeDebugRenderMode: {ResolveActiveDebugRenderMode()}");
         builder.AppendLine($"enableBillboards: {enableBillboards}");
+        builder.AppendLine($"useScreenSizeLod: {useScreenSizeLod}");
+        builder.AppendLine($"lodScreenRelativeHeights: {lod1ScreenRelativeHeight:F3}, {lod2ScreenRelativeHeight:F3}, {lod3ScreenRelativeHeight:F3}");
         builder.AppendLine($"activeBillboardDistance: {ResolveBillboardDistance():F3}");
         builder.AppendLine($"chunkSize: {chunkSize}");
 
